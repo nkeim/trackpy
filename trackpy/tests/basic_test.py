@@ -31,8 +31,7 @@ def test_easy_tracking():
             level.append(pt.PointND(j, (j, k)))
         levels.append(level)
 
-    hash_generator = lambda: pt.Hash_table((level_count + 1, p_count * 2 + 1), .5)
-    tracks = pt.link(levels, 1.5, hash_generator)
+    tracks = pt.link(levels, 1.5)
 
     assert len(tracks) == p_count
 
