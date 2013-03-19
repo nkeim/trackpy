@@ -16,10 +16,10 @@
 #along with this program; if not, see <http://www.gnu.org/licenses>.
 from __future__ import division
 
+import sys
 import numpy as np
 from scipy.spatial import cKDTree
 import numba
-
 
 class TreeFinder(object):
     def __init__(self, points):
@@ -30,6 +30,8 @@ class TreeFinder(object):
         self.kdtree = cKDTree(coords, int(round(np.log10(len(points)))))
     def get_region(self, point, rrange):
         '''
+        DEPRECATED! Faster to do it in link()
+
         :param point: point to find the features around
         :param rrange: the size of the ball to search in
 
@@ -44,11 +46,6 @@ class TreeFinder(object):
         finite = ~np.isinf(dists)
         return [self.points[i] for i in inds.compress(finite)], dists.compress(finite)
 
-class TreeFinderBare(object):
-    def __init__(self, coords):
-        """Takes a list of particles.
-        """
-        self.kdtree = cKDTree(coords, int(round(np.log10(len(coords)))))
 class Track(object):
     '''
     :param point: The first feature in the track if not  `None`.
@@ -109,6 +106,53 @@ class Track(object):
         Returns the last point on the track'''
         return self.points[-1]
 
+
+class TrackNoStore(object):
+    '''
+    :param point: The first feature in the track if not  `None`.
+    :type point: :py:class:`~trackpy.tracking.Point`
+
+    Base class for objects to represent linked tracks. Does not actually
+    store track data permanently; instead lets new points in all tracks
+    be flushed out periodically.
+    '''
+    count = 0
+    buffer = []
+
+    def __init__(self, point=None):
+        self.indx = TrackNoStore.count           # unique id
+        TrackNoStore.count += 1
+        # will take initiator point
+        if not point is None:
+            self.add_point(point)
+
+    def __eq__(self, other):
+        return self.index == other.index
+
+    def __neq__(self, other):
+        return not self.__eq__(other)
+    __hash__ = None
+
+    def add_point(self, point):
+        '''
+        :param point: point to add
+        :type point:  :py:class:`~trackpy.tracking.Point`
+
+        Appends the point to this track. '''
+        TrackNoStore.buffer.append((self.indx, point))
+        point.add_to_track(self)
+
+    @classmethod
+    def flush(cls):
+        """Return all the buffered points and empty the buffer.
+
+        Intended to be called once per frame.
+
+        Returns (time, point) tuples.
+        """
+        buf = cls.buffer
+        cls.buffer = []
+        return buf
 
 class Point(object):
     '''
@@ -196,7 +240,24 @@ class PointND(Point):
         '''
         return np.sqrt(np.sum((self.pos - other_point.pos) ** 2))
 
+class IndexedPointND(Point):
+    '''
+    :param t: a time-like variable.
+    :param pos: position of feature
+    :type pos: iterable of length d
+
+    Version of :py:class:`Point` for tracking in flat space with
+    non-periodic boundary conditions.
+    '''
+
+    def __init__(self, t, pos, indx):
+        Point.__init__(self)                  # initialize base class
+        self.t = t                            # time
+        self.pos = np.asarray(pos)            # position in ND space
+        self.indx = indx
+
 class Level(object):
+    """Used with fastlink()"""
     def __init__(self, coordinates, levelnum, max_candidates=9):
         self.coordinates = coordinates
         self.levelnum = levelnum
@@ -226,7 +287,6 @@ def fastlink(levels, search_range, memory=0, track_cls=Track, diagdict={}):
     :py:class:`~trackpy.tracking.Point` objects.
 
     '''
-    #    print "starting linking"
     # initial source set
     lev_iter = iter(levels)
     prev_levelnum, prev_levelcoords = lev_iter.next()
@@ -312,22 +372,32 @@ def fastlink(levels, search_range, memory=0, track_cls=Track, diagdict={}):
             done_flg = False
             s_sn = set()                  # source sub net
             d_sn = set()                  # destination sub net
-            # add working particle to destination sub-net
+            # add working particle to destination sub-net, as the seed
             d_sn.add(cpid)
+            # Grow the network outwards to find the complete subnet.
+            # In graph theory this is called a connected component.
             while not done_flg:
                 d_sn_sz = len(d_sn)
                 s_sn_sz = len(s_sn)
                 for dp in d_sn:
-                    for c_sp in cur_level.backward_cands[dp,:cur_level.backward_ncands[dp]]:
-                        s_sn.add(c_sp)
-                        prev_set.discard(c_sp)
+                    c_sps = set(cur_level.backward_cands[dp,:cur_level.backward_ncands[dp]].tolist())
+                    s_sn |= prev_set & c_sps # Already-assigned particles ineligible
+                    prev_set -= c_sps
                 for sp in s_sn:
-                    for c_dp in prev_level.forward_cands[sp,:prev_level.forward_ncands[sp]]:
-                        d_sn.add(c_dp)
-                        cur_set.discard(c_dp)
+                    c_dps = set(prev_level.forward_cands[dp,:prev_level.forward_ncands[sp]].tolist())
+                    d_sn |= cur_set & c_dps
+                    cur_set -= c_dps
                 done_flg = (len(d_sn) == d_sn_sz) and (len(s_sn) == s_sn_sz)
-
+            # There could be more trivial bonds
+            # FIXME: We need a trivial bond shortcut here
+            # FIXME: Current-frame particles that are not in d_sn should not
+            # be presented as candidates to link_subnet_bare!!
+            # Until we do that, the subnet functionality is broken!
             s_sn_list = sorted(s_sn)
+            assert s_sn_list
+            print s_sn_list
+            print prev_level.forward_cands[s_sn_list,:]
+            sys.stdout.flush()
             best_pairs = link_subnet_bare(s_sn_list, prev_level.forward_cands[s_sn_list,:],
                     prev_level.forward_dists[s_sn_list,:],
                     prev_level.forward_ncands[s_sn_list],
@@ -382,20 +452,24 @@ def fastlink(levels, search_range, memory=0, track_cls=Track, diagdict={}):
         yield cur_level.trackassign
 
 
-def link(levels, search_range, memory=0, track_cls=Track):
+
+def link(levels, search_range, memory=0, track_cls=Track, iterable=False):
     '''
-    :param levels: Nested iterables of :py:class:`~trapy.tracking.Point` objects
+    :param levels: Iterable of iterables of :py:class:`~trapy.tracking.Point` objects
     :type levels: Iterable of iterables
     :param search_range: the maximum distance features can move between frames
     :param memory: the maximum number of frames that a feature can skip along a track
     :param track_cls: The class to use for the returned track objects
     :type track_cls: :py:class:`~trackpy.tracking.Track`
+    :param iterable: Whether to yield tracks as they are generated.
 
     Generic version of linking algorithm, should work for any
     dimension.  All information about dimensionality and the metric
-    are encapsulated in the hash_table and
-    :py:class:`~trackpy.tracking.Point` objects.
+    are handled by scipy.spatial.cKDTree
 
+    If 'iterable', uses the flush() method of `track_cls` to spit out newly-tracked 
+    particles each time it finishes processing a level. (You should use TrackNoStore 
+    for `track_cls.) Otherwise, returns the complete list of track objects at the end.
     '''
     #    print "starting linking"
     # initial source set
@@ -411,6 +485,7 @@ def link(levels, search_range, memory=0, track_cls=Track):
     # assume everything in first level starts a track
     # initialize the master track list with the points in the first level
     track_lst = [track_cls(p) for p in prev_set]
+    if iterable: yield track_cls.flush()
     mem_set = set()
     # fill in first 'prev' hash
 
@@ -438,13 +513,21 @@ def link(levels, search_range, memory=0, track_cls=Track):
             p.back_cands = []
             p.forward_cands = []
         # sort out what can go to what
+        query = prev_hash.kdtree.query
+        hashpts = prev_hash.points
         for p in cur_level:
             # get
-            candidates, distances = prev_hash.get_region(p, search_range)
-            for wp, d in zip(candidates, distances):
-                # FIXME: PointND.distance() is now unused
-                p.back_cands.append((wp, d))
-                wp.forward_cands.append((p, d))
+            dists, inds = query(p.pos, 10, distance_upper_bound=search_range)
+            #finite = ~np.isinf(dists)
+            #return [self.points[i] for i in inds.compress(finite)], dists.compress(finite)
+            for d, i in zip(dists, inds):
+                try:
+                    wp = hashpts[i]
+                    p.back_cands.append((wp, d))
+                    wp.forward_cands.append((p, d))
+                except IndexError:
+                    # cKDTree signals no more neighbors by returning an out-of-bounds index
+                    break
 
         # sort the candidate lists by distance
         for p in cur_set:
@@ -548,28 +631,10 @@ def link(levels, search_range, memory=0, track_cls=Track):
         # add in the memory points
         # store the current level for use in next loop
 
-    return track_lst
+        if iterable: yield track_cls.flush()
+    if not iterable:
+        return # track_lst
 
-@numba.autojit
-def _invert_candidates(back_cands, back_dists, fwd_cands, fwd_dists):
-    """Take the information in back_* and reshuffle into fwd_*.
-
-    Modifies fwd_*; returns nothing.
-    """
-    inf = np.inf
-    maxcands = fwd_cands.shape[1]
-    for i in range(back_cands.shape[0]):
-        for j in range(maxcands):
-            ppid = back_cands[i,j]
-            pdist = back_dists[i,j]
-            if pdist != inf:
-                for fj in range(maxcands):
-                    if fwd_dists[ppid,fj] == inf:
-                        # Find an empty spot in fwd_cands
-                        fwd_dists[ppid,fj] = pdist
-                        fwd_cands[ppid,fj] = i
-                        break
-    return 0
 
 #######
 # Sub-network optimization code
@@ -589,7 +654,7 @@ def link_subnet(s_sn, search_radius):
     # The basic idea: replace Point objects with integer indices into lists of Points.
     # Then the hard part (recursion) runs quickly because it is just passing arrays.
     # In fact, we can compile it with numba so that it runs in acceptable time.
-    MAX_SUB_NET_SIZE = 50 # Can't exceed Python's recursion depth
+    MAX_SUB_NET_SIZE = 30 # Can't exceed Python's recursion depth
     max_candidates = 9 # Max forward candidates we expect for any particle
     src_net = list(s_sn)
     nj = len(src_net) # j will index the source particles
@@ -616,8 +681,23 @@ def link_subnet(s_sn, search_radius):
     # The assignments are persistent across levels of the recursion
     best_assignments = np.ones((nj,), dtype=np.int64) * -1
     cur_assignments = np.ones((nj,), dtype=np.int64) * -1
-    snr = _SNRecursion()
-    snr.sn_recur(0, nj, np.inf, 0., ncands, candsarray, distsarray, best_assignments, cur_assignments)
+    tmp_assignments = np.zeros((nj,), dtype=np.int64)
+    cur_sums = np.zeros((nj,), dtype=np.float64)
+    #print ncands
+    #print candsarray
+    #print distsarray
+    #sys.stdout.flush()
+    bestsum_norecur = _sn_norecur(ncands, candsarray, distsarray, cur_assignments, cur_sums,
+            tmp_assignments, best_assignments)
+    if bestsum_norecur == 0:
+        raise SubnetOversizeException()
+    # Do it both ways
+    #best_norecur = best_assignments
+    #best_assignments = np.ones((nj,), dtype=np.int64) * -1
+    #cur_assignments = np.ones((nj,), dtype=np.int64) * -1
+    #snr = _SNRecursion()
+    #bestsum_recur = snr.sn_recur(0, nj, np.inf, 0., ncands, candsarray, distsarray, best_assignments, cur_assignments)
+    #assert np.allclose(best_assignments, best_norecur)
     # Remove null links and return particle objects
     return [(src_net[j], dcands[i]) for j, i in enumerate(best_assignments) if i >= 0]
 
@@ -659,19 +739,23 @@ def link_subnet_bare(subnet_src_pids, subnet_fwd_cands, subnet_fwd_dists,
     best_assignments = np.ones((nj,), dtype=np.int64) * -1
     cur_assignments = np.ones((nj,), dtype=np.int64) * -1
     tmp_assignments = np.zeros((nj,), dtype=np.int64)
-    # FIXME: This can be done without recursion! We just have to implement
-    # our own "stack" with 'nj' levels. That would be a massive speedup.
     #print  subnet_fwd_ncands, sfcands, sfdists
+    _sn_norecur(subnet_fwd_ncands, sfcands, sfdists, cur_assignments, tmp_assignments, best_assignments)
+    # Do it both ways
+    #best_norecur = best_assignments
+    #best_assignments = np.ones((nj,), dtype=np.int64) * -1
+    #cur_assignments = np.ones((nj,), dtype=np.int64) * -1
+    #tmp_assignments = np.zeros((nj,), dtype=np.int64)
     #snr = _SNRecursion()
     #snr.sn_recur(0, nj, np.inf, 0., subnet_fwd_ncands, sfcands, 
     #        sfdists, best_assignments, cur_assignments)
-    _sn_norecur(subnet_fwd_ncands, sfcands, sfdists, cur_assignments, tmp_assignments, best_assignments)
+    #assert np.allclose(best_assignments, best_norecur)
     #print best_assignments
     # Remove null links and return particle objects
     return [(src_net[j], i) for j, i in enumerate(best_assignments) if i >= 0]
 
 @numba.jit
-class _SNRecursion(object):
+class SNRecursion(object):
     @numba.f8(numba.i8, numba.i8, numba.f8, numba.f8,
         numba.i8[:],
         numba.i8[:,:], numba.f8[:,:], numba.i8[:], numba.i8[:])
@@ -680,7 +764,7 @@ class _SNRecursion(object):
         for i in range(ncands[j] + 1): # Include the null link
             tmp_sum = cur_sum + distsarray[j,i]
             if tmp_sum > best_sum:
-                # if we are already greater than the best sum, bail. we
+                # if we are already greater than the best sum, bail we
                 # can bail all the way out of this branch because all
                 # the other possible connections (including the null
                 # connection) are more expensive than the current
@@ -716,7 +800,7 @@ class _SNRecursion(object):
         return best_sum
 
 @numba.autojit
-def _sn_norecur(ncands, candsarray, distsarray, cur_assignments, tmp_assignments, best_assignments):
+def _sn_norecur(ncands, candsarray, distsarray, cur_assignments, cur_sums, tmp_assignments, best_assignments):
     """Find the optimal track assigments for a subnetwork, without recursion.
 
     This is for nj source particles. All arguments are arrays with nj rows.
@@ -725,79 +809,86 @@ def _sn_norecur(ncands, candsarray, distsarray, cur_assignments, tmp_assignments
     best_assignments is modified in place.
     Returns the best sum.
     """
+    itercount = 0
     nj = candsarray.shape[0]
     tmp_sum = 0.
-    cur_sum = 0.
     best_sum = 1.0e23
     j = 0
     while 1:
+        itercount += 1
+        delta = 0 # What to do at the end
         # This is an endless loop. We go up and down levels of recursion,
         # and emulate the mechanics of nested "for" loops, using the
         # blocks of code marked "GO UP" and "GO DOWN". It's not pretty.
 
         # Load state from the "stack"
         i = tmp_assignments[j]
+        cur_sum = cur_sums[j]
+        #if j == 0:
+        #    print i, j, best_sum
+        #    sys.stdout.flush()
         if i > ncands[j]:
             # We've exhausted possibilities at this level, including the
             # null link; make no more changes and go up a level
             #### GO UP
-            if j > 0:
-                j -= 1 
-                tmp_assignments[j] += 1 # Try the next candidate at this higher level
-                continue
-            else:
-                return best_sum
-        tmp_sum = cur_sum + distsarray[j,i]
-        if tmp_sum > best_sum:
-            # if we are already greater than the best sum, bail. we
-            # can bail all the way out of this branch because all
-            # the other possible connections (including the null
-            # connection) are more expensive than the current
-            # connection, thus we can discard with out testing all
-            # leaves down this branch
-            #### GO UP
-            if j > 0:
-                j -= 1
-                tmp_assignments[j] += 1 # Try the next candidate at this higher level
-                continue
-            else:
-                return best_sum
-        # We can have as many null links as we want, but the real particles are finite
-        flag = 0
-        for jtmp in range(nj): 
-            if cur_assignments[jtmp] == candsarray[j,i]:
-                flag = 1
-        if flag and candsarray[j,i] >= 0:
-            # we have already used this destination point; try the next one instead
-            tmp_assignments[j] += 1
-            continue
-        # OK, I guess we'll try this assignment
-        cur_assignments[j] = candsarray[j,i]
-        if j + 1 == nj:
-            # We have made assignments for all the particles,
-            # and we never exceeded the previous best_sum.
-            # This is our new optimum.
-            #print 'hit: %f' % best_sum
-            best_sum = tmp_sum
-            # This array is shared by all levels of recursion.
-            # If it's not touched again, it will be used once we
-            # get back to link_subnet
-            for tmpj in range(nj):
-                best_assignments[tmpj] = cur_assignments[tmpj]
-            #### GO UP
-            if j > 0:
-                j -= 1 
-                tmp_assignments[j] += 1 # Try the next candidate at this higher level
-                continue
-            else:
-                return best_sum
+            delta = -1
         else:
-            # Try various assignments for the next particle
-            #### GO DOWN
+            tmp_sum = cur_sum + distsarray[j,i]
+            if tmp_sum > best_sum:
+                # if we are already greater than the best sum, bail. we
+                # can bail all the way out of this branch because all
+                # the other possible connections (including the null
+                # connection) are more expensive than the current
+                # connection, thus we can discard with out testing all
+                # leaves down this branch
+                #### GO UP
+                delta = -1
+            else:
+                # We have to seriously consider this candidate.
+                # We can have as many null links as we want, but the real particles are finite
+                # This loop looks inefficient but it's what numba wants!
+                flag = 0
+                for jtmp in range(nj): 
+                    if cur_assignments[jtmp] == candsarray[j,i]:
+                        if jtmp < j: 
+                            flag = 1
+                if flag and candsarray[j,i] >= 0:
+                    # we have already used this destination point; try the next one instead
+                    delta = 0
+                else:
+                    cur_assignments[j] = candsarray[j,i]
+                    # OK, I guess we'll try this assignment
+                    if j + 1 == nj:
+                        # We have made assignments for all the particles,
+                        # and we never exceeded the previous best_sum.
+                        # This is our new optimum.
+                        #print 'hit: %f' % best_sum
+                        best_sum = tmp_sum
+                        # This array is shared by all levels of recursion.
+                        # If it's not touched again, it will be used once we
+                        # get back to link_subnet
+                        for tmpj in range(nj):
+                            best_assignments[tmpj] = cur_assignments[tmpj]
+                        #### GO UP
+                        delta = -1
+                    else:
+                        # Try various assignments for the next particle
+                        #### GO DOWN
+                        delta = 1
+        if delta == -1:
+            if j > 0:
+                j -= 1 
+                tmp_assignments[j] += 1 # Try the next candidate at this higher level
+                continue
+            else:
+                return best_sum
+            tmp_assignments[j] += 1
+        elif delta == 1:
             j += 1 
+            cur_sums[j] = tmp_sum # Floor for all subsequent sums
             tmp_assignments[j] = 0
-
-
-
-
+        else:
+            tmp_assignments[j] += 1
+        #if itercount > 1000000:
+        #    return 0.
 
