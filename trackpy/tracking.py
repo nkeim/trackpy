@@ -17,36 +17,17 @@
 from __future__ import division
 
 import numpy as np
+from scipy.spatial import cKDTree
+import numba
 
 
-class Hash_table(object):
-    '''
-    :param dims: the range of the data to be put in the hash table.  0<data[k]<dims[k]
-    :param box_size: how big each box should be in data units.  The same scale is used for all dimensions
-
-    Basic hash table to fast look up of particles in the region of a given particle
-    '''
-    class Out_of_hash_excpt(Exception):
+class TreeFinder(object):
+    def __init__(self, points):
+        """Takes a list of particles.
         """
-        :py:exc:`Exception` for indicating that a particle is outside of the
-        valid range for this hash table."""
-        pass
-
-    def __init__(self, dims, box_size):
-        '''
-        Sets up the hash table
-
-        '''
-        self.dims = dims                  # the dimensions of the data
-        self.box_size = box_size          # the size of boxes to use in the units of the data
-        self.hash_dims = np.ceil(np.array(dims) / box_size)
-
-        self.hash_table = [[] for j in range(int(np.prod(self.hash_dims)))]
-        self.spat_dims = len(dims)        # how many spatial dimensions
-        self.cached_shifts = None
-        self.cached_rrange = None
-        self.strides = np.cumprod(np.concatenate(([1], self.hash_dims[1:])))[::-1]
-
+        self.points = points
+        coords = np.array([pt.pos for pt in points])
+        self.kdtree = cKDTree(coords, int(round(np.log10(len(points)))))
     def get_region(self, point, rrange):
         '''
         :param point: point to find the features around
@@ -55,66 +36,13 @@ class Hash_table(object):
 
         Returns all the particles with in the region of maximum radius
         rrange in data units
-
-
-        can raise :py:exc:`Out_of_hash_excpt`
         '''
-        hash_size = self.hash_dims
-        center = np.floor(point.pos / self.box_size)
-        if any(center >= hash_size) or any(center < 0):
-            raise Hash_table.Out_of_hash_excpt("cord out of range")
-
-        rrange = int(np.ceil(rrange / self.box_size))
-
-        # check if we have already computed the shifts
-        if rrange == self.cached_rrange and self.cached_shifts is not None:
-            shifts = self.cached_shifts   # if we have, use them
-        # Other wise, generate them
-        else:
-            if self.spat_dims == 2:
-                shifts = [np.array([j, k])
-                            for j in range(-rrange, rrange + 1)
-                            for k in range(-rrange, rrange + 1)]
-            elif self.spat_dims == 3:
-                shifts = [np.array([j, k, m])
-                            for j in range(-rrange, rrange + 1)
-                            for k in range(-rrange, rrange + 1)
-                            for m in range(-rrange, rrange + 1)]
-            else:
-                raise NotImplementedError('only 2 and 3 dimensions implemented')
-            self.cached_rrange = rrange   # and save them
-            self.cached_shifts = shifts
-        region = []
-
-        for s in shifts:
-
-            cord = center + s
-            if any(cord >= hash_size) or any(cord < 0):
-                continue
-            indx = int(sum(cord * self.strides))
-            region.extend(self.hash_table[indx])
-        return region
-
-    def add_point(self, point):
-        """
-        :param point: object representing the feature to add to the hash table
-
-        Adds the `point` to the hash table.  Assumes that :py:attr:`point.pos` exists and
-        is the array-like.
-
-
-
-
-        can raise :py:exc:`~Hash_table.Out_of_hash_excpt`
-
-        """
-        cord = np.floor(np.asarray(point.pos) / self.box_size)
-        hash_size = self.hash_dims
-        if any(cord >= hash_size) or any(cord < 0):
-            raise Hash_table.Out_of_hash_excpt("cord out of range")
-        indx = int(sum(cord * self.strides))
-        self.hash_table[indx].append(point)
-
+        # We hard-code the max number of points found.
+        # If get_region() returns more particles than this,
+        # the search distance is clearly too large.
+        dists, inds = self.kdtree.query(point.pos, 10, distance_upper_bound=rrange)
+        finite = ~np.isinf(dists)
+        return [self.points[i] for i in inds.compress(finite)], dists.compress(finite)
 
 class Track(object):
     '''
@@ -264,36 +192,11 @@ class PointND(Point):
         return np.sqrt(np.sum((self.pos - other_point.pos) ** 2))
 
 
-def link_full(levels, dims, search_range, hash_cls, memory=0, track_cls=Track):
-    '''
-    :param levels: Nested iterables of :py:class:`~trapy.tracking.Point` objects
-    :type levels: Iterable of iterables
-    :param dims: The dimensions of the data
-    :param hash_cls: A class that provides :py:func:`add_particle` and
-                :py:func:`get_region` and has a two argument constructor
-    :param search_range: the maximum distance features can move between frames
-    :param memory: the maximum number of frames that a feature can skip along a track
-    :param track_cls: The class to use for the returned track objects
-    :type track_cls: :py:class:`~trackpy.tracking.Track`
-
-    Generic version of linking algorithm, should work for any
-    dimension.  All information about dimensionality and the metric
-    are encapsulated in the hash_table and
-    :py:class:`~trackpy.tracking.Point` objects.
-
-    .. deprecated:: 0.2
-    '''
-    hash_generator = lambda: hash_cls(dims, search_range)
-    return link(levels, search_range, hash_generator, memory, track_cls)
-
-
-def link(levels, search_range, hash_generator, memory=0, track_cls=Track):
+def link(levels, search_range, memory=0, track_cls=Track):
     '''
     :param levels: Nested iterables of :py:class:`~trapy.tracking.Point` objects
     :type levels: Iterable of iterables
     :param search_range: the maximum distance features can move between frames
-    :param hash_generator: a callable that will return a new empty object that supports :py:func:`add_particle` and
-                :py:func:`get_region`
     :param memory: the maximum number of frames that a feature can skip along a track
     :param track_cls: The class to use for the returned track objects
     :type track_cls: :py:class:`~trackpy.tracking.Track`
@@ -306,12 +209,13 @@ def link(levels, search_range, hash_generator, memory=0, track_cls=Track):
     '''
     #    print "starting linking"
     # initial source set
-    prev_set = set(levels[0])
-    prev_hash = hash_generator()
+    lev_iter = iter(levels)
+    prev_level = lev_iter.next()
+    prev_set = set(prev_level)
+    prev_hash = TreeFinder(prev_level)
     # set up the particles in the previous level for
     # linking
     for p in prev_set:
-        prev_hash.add_point(p)
         p.forward_cands = []
 
     # assume everything in first level starts a track
@@ -325,9 +229,9 @@ def link(levels, search_range, hash_generator, memory=0, track_cls=Track):
     for j in range(memory):
         mem_history.append(set())
 
-    for cur_level in levels[1:]:
+    for cur_level in lev_iter:
         # make a new hash object
-        cur_hash = hash_generator()
+        cur_hash = TreeFinder(cur_level)
 
         # create the set for the destination level
         cur_set = set(cur_level)
@@ -341,20 +245,16 @@ def link(levels, search_range, hash_generator, memory=0, track_cls=Track):
         # track of possible connections
 
         for p in cur_set:
-            cur_hash.add_point(p)
             p.back_cands = []
             p.forward_cands = []
         # sort out what can go to what
         for p in cur_level:
             # get
-            work_box = prev_hash.get_region(p, search_range)
-            for wp in work_box:
-                # this should get changed to deal with squared values
-                # to save an eventually square root
-                d = p.distance(wp)
-                if d < search_range:
-                    p.back_cands.append((wp, d))
-                    wp.forward_cands.append((p, d))
+            candidates, distances = prev_hash.get_region(p, search_range)
+            for wp, d in zip(candidates, distances):
+                # FIXME: PointND.distance() is now unused
+                p.back_cands.append((wp, d))
+                wp.forward_cands.append((p, d))
 
         # sort the candidate lists by distance
         for p in cur_set:
@@ -404,9 +304,13 @@ def link(levels, search_range, hash_generator, memory=0, track_cls=Track):
                         cur_set.discard(c_dp[0])
                 done_flg = (len(d_sn) == d_sn_sz) and (len(s_sn) == s_sn_sz)
 
-            snl = sub_net_linker(s_sn, search_range)
+            #snl = sub_net_linker(s_sn, search_range)
 
-            spl, dpl = zip(*snl.best_pairs)
+            #spl, dpl = zip(*snl.best_pairs)
+            best_pairs = link_subnet(s_sn, search_range)
+            spl, dpl = zip(*best_pairs)
+
+
             # strip the distance information off the subnet sets and
             # remove the linked particles
             d_remain = set([d for d in d_sn])
@@ -414,7 +318,7 @@ def link(levels, search_range, hash_generator, memory=0, track_cls=Track):
             s_remain = set([s for s in s_sn])
             s_remain -= set(spl)
 
-            for sp, dp in snl.best_pairs:
+            for sp, dp in best_pairs:
                 # do linking and clean up
                 sp.track.add_point(dp)
                 del dp.back_cands
@@ -443,8 +347,7 @@ def link(levels, search_range, hash_generator, memory=0, track_cls=Track):
             mem_set |= new_mem_set
             # add the memory particles to what will be the next source
             # set
-            tmp_set |= mem_set
-            # add memory points to prev_hash (to be used as the next source)
+            tmp_set |= mem_set # add memory points to prev_hash (to be used as the next source)
             for m in mem_set:
                 # add points to the hash
                 prev_hash.add_point(m)
@@ -458,80 +361,97 @@ def link(levels, search_range, hash_generator, memory=0, track_cls=Track):
     return track_lst
 
 
+#######
+# Sub-network optimization code
+
 class SubnetOversizeException(Exception):
     '''An :py:exc:`Exception` to be raised when the sub-nets are too
     big to be efficiently linked.  If you get this then either reduce your search range
     or increase :py:attr:`sub_net_linker.MAX_SUB_NET_SIZE`'''
     pass
 
+def link_subnet(s_sn, search_radius):
+    """Recursively find the optimal bonds for a group of particles between 2 frames.
+    
+    This is only invoked when there is more than one possibility within
+    'search_radius'.
+    """
+    # The basic idea: replace Point objects with integer indices into lists of Points.
+    # Then the hard part (recursion) runs quickly because it is just passing arrays.
+    # In fact, we can compile it with numba so that it runs in acceptable time.
+    MAX_SUB_NET_SIZE = 50 # Can't exceed Python's recursion depth
+    max_candidates = 9 # Max forward candidates we expect for any particle
+    src_net = list(s_sn)
+    nj = len(src_net) # j will index the source particles
+    if nj > MAX_SUB_NET_SIZE:
+        raise SubnetOversizeException('sub net contains %d points' % nj)
+    # Build arrays of all destination (forward) candidates and their distances
+    dcands = set()
+    for p in src_net:
+        dcands.update([cand for cand, dist in p.forward_cands])
+    dcands = list(dcands)
+    dcands_map = {cand: i for i, cand in enumerate(dcands)}
+    # A source particle's actual candidates only take up the start of
+    # each row of the array. All other elements represent the null link option
+    # (i.e. particle lost)
+    candsarray = np.ones((nj, max_candidates + 1), dtype=np.int64) * -1
+    distsarray = np.ones((nj, max_candidates + 1), dtype=np.float64) * search_radius
+    ncands = np.zeros((nj,), dtype=np.int64)
+    for j, sp in enumerate(src_net):
+        ncands[j] = len(sp.forward_cands)
+        if ncands[j] > max_candidates:
+            raise SubnetOversizeException('Particle has %i forward candidates --- too many' % ncands[j])
+        candsarray[j,:ncands[j]] = [dcands_map[cand] for cand, dist in sp.forward_cands]
+        distsarray[j,:ncands[j]] = [dist for cand, dist in sp.forward_cands]
+    # The assignments are persistent across levels of the recursion
+    best_assignments = np.ones((nj,), dtype=np.int64) * -1
+    cur_assignments = np.ones((nj,), dtype=np.int64) * -1
+    snr = SNRecursion()
+    snr.sn_recur(0, nj, np.inf, 0., ncands, candsarray, distsarray, best_assignments, cur_assignments)
+    # Remove null links and return particle objects
+    return [(src_net[j], dcands[i]) for j, i in enumerate(best_assignments) if i >= 0]
 
-class sub_net_linker(object):
-    '''A helper class for implementing the Crocker-Grier tracking
-    algorithm.  This class handles the recursion code for the sub-net linking'''
-    MAX_SUB_NET_SIZE = 50
-
-    def __init__(self, s_sn, search_range):
-        self.s_sn = s_sn
-        self.s_lst = [s for s in s_sn]
-        self.MAX = len(self.s_lst)
-        self.sr = search_range
-        self.best_pairs = []
-        self.cur_pairs = []
-        self.best_sum = np.Inf
-        self.d_taken = set()
-        self.cur_sum = 0
-
-        if self.MAX > sub_net_linker.MAX_SUB_NET_SIZE:
-            raise SubnetOversizeException('sub net contains %d points' % self.MAX)
-        # do the computation
-        self.do_recur(0)
-
-    def do_recur(self, j):
-        cur_s = self.s_lst[j]
-        for cur_d, dist in cur_s.forward_cands:
-            tmp_sum = self.cur_sum + dist
-            if tmp_sum > self.best_sum:
+@numba.jit
+class SNRecursion(object):
+    @numba.f8(numba.i8, numba.i8, numba.f8, numba.f8,
+        numba.i8[:],
+        numba.i8[:,:], numba.f8[:,:], numba.i8[:], numba.i8[:])
+    def sn_recur(self, j, nj, best_sum, cur_sum, ncands, candsarray, distsarray, best_assignments, cur_assignments):
+        # ncands[j] is number of non-nan elements in candsarray[j]
+        for i in range(ncands[j] + 1): # Include the null link
+            tmp_sum = cur_sum + distsarray[j,i]
+            if tmp_sum > best_sum:
                 # if we are already greater than the best sum, bail we
                 # can bail all the way out of this branch because all
                 # the other possible connections (including the null
                 # connection) are more expensive than the current
                 # connection, thus we can discard with out testing all
                 # leaves down this branch
-                return
-            if cur_d in self.d_taken:
+                return best_sum
+            # We can have as many null links as we want, but the real particles are finite
+            flag = 0
+            for jtmp in range(nj): 
+                if cur_assignments[jtmp] == candsarray[j,i]:
+                    flag = 1
+            if flag and candsarray[j,i] >= 0:
                 # we have already used this destination point, bail
                 continue
-            # add this pair to the running list
-            self.cur_pairs.append((cur_s, cur_d))
-            # add the destination point to the exclusion list
-            self.d_taken.add(cur_d)
-            # update the current sum
-            self.cur_sum = tmp_sum
-            # buried base case
-            # if we have hit the end of s_lst and made it this far, it
-            # must be a better linking so save it.
-            if j + 1 == self.MAX:
-                self.best_sum = tmp_sum
-                self.best_pairs = list(self.cur_pairs)
+            # OK, I guess we'll try this assignment
+            cur_assignments[j] = candsarray[j,i]
+            if j + 1 == nj:
+                # We have made assignments for all the particles,
+                # and we never exceeded the previous best_sum.
+                # This is our new optimum.
+                #print 'hit: %f' % best_sum
+                best_sum = tmp_sum
+                # This array is shared by all levels of recursion.
+                # If it's not touched again, it will be used once we
+                # get back to link_subnet
+                for tmpj in range(nj):
+                    best_assignments[tmpj] = cur_assignments[tmpj]
             else:
-                # recurse!
-                self.do_recur(j + 1)
-            # remove this step from the working
-            self.cur_sum -= dist
-            self.d_taken.remove(cur_d)
-            self.cur_pairs.pop()
-        # try null link
-        tmp_sum = self.cur_sum + self.sr
-        if tmp_sum < self.best_sum:
-            # add displacement penalty
-            self.cur_sum = tmp_sum
-            # buried base case
-            if j + 1 == self.MAX:
-                self.best_sum = tmp_sum
-                self.best_pairs = list(self.cur_pairs)
-            else:
-                # recurse!
-                self.do_recur(j + 1)
-            # remove penalty
-            self.cur_sum -= self.sr
-        pass
+                # Try various assignments for the next particle
+                best_sum = self.sn_recur(j + 1, nj, best_sum, tmp_sum, ncands, candsarray, distsarray, best_assignments, cur_assignments)
+            # Undo the assignment, for sanity.
+            cur_assignments[j] = -1
+        return best_sum
