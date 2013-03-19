@@ -546,7 +546,6 @@ def _sn_norecur(ncands, candsarray, distsarray, cur_assignments, cur_sums, tmp_a
                 continue
             else:
                 return best_sum
-            tmp_assignments[j] += 1
         elif delta == 1:
             j += 1 
             cur_sums[j] = tmp_sum # Floor for all subsequent sums
