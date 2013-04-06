@@ -28,7 +28,7 @@ class TreeFinder(object):
         """
         self.points = points
         coords = np.array([pt.pos for pt in points])
-        self.kdtree = cKDTree(coords, int(round(np.log10(len(points)))))
+        self.kdtree = cKDTree(coords, max(3, int(round(np.log10(len(points)))))) # This could be tuned
 class Track(object):
     '''
     :param point: The first feature in the track if not  `None`.
@@ -429,7 +429,7 @@ def link_subnet(s_sn, search_radius):
     # The basic idea: replace Point objects with integer indices into lists of Points.
     # Then the hard part (recursion) runs quickly because it is just passing arrays.
     # In fact, we can compile it with numba so that it runs in acceptable time.
-    MAX_SUB_NET_SIZE = 30 # Can't exceed Python's recursion depth
+    MAX_SUB_NET_SIZE = 30 # See also the iteration limit hard-coded into _sn_norecur()
     max_candidates = 9 # Max forward candidates we expect for any particle
     src_net = list(s_sn)
     nj = len(src_net) # j will index the source particles
@@ -458,8 +458,10 @@ def link_subnet(s_sn, search_radius):
     cur_assignments = np.ones((nj,), dtype=np.int64) * -1
     tmp_assignments = np.zeros((nj,), dtype=np.int64)
     cur_sums = np.zeros((nj,), dtype=np.float64)
-    _sn_norecur(ncands, candsarray, distsarray, cur_assignments, cur_sums,
+    bestsum = _sn_norecur(ncands, candsarray, distsarray, cur_assignments, cur_sums,
             tmp_assignments, best_assignments)
+    if bestsum < 0:
+        raise SubnetOversizeException('Exceeded max iterations for subnet. Try reducing search_range.')
     # Remove null links and return particle objects
     return [(src_net[j], dcands[i]) for j, i in enumerate(best_assignments) if i >= 0]
 
@@ -469,7 +471,7 @@ def _sn_norecur(ncands, candsarray, distsarray, cur_assignments, cur_sums, tmp_a
 
     This is for nj source particles. All arguments are arrays with nj rows.
 
-    cur_assignments, tmp_assignments are just temporary registers of length 
+    cur_assignments, tmp_assignments are just temporary registers of length nj.
     best_assignments is modified in place.
     Returns the best sum.
     """
@@ -480,6 +482,8 @@ def _sn_norecur(ncands, candsarray, distsarray, cur_assignments, cur_sums, tmp_a
     j = 0
     while 1:
         itercount += 1
+        if itercount >= 100000000:
+            return -1.0
         delta = 0 # What to do at the end
         # This is an endless loop. We go up and down levels of recursion,
         # and emulate the mechanics of nested "for" loops, using the
@@ -487,7 +491,6 @@ def _sn_norecur(ncands, candsarray, distsarray, cur_assignments, cur_sums, tmp_a
 
         # Load state from the "stack"
         i = tmp_assignments[j]
-        cur_sum = cur_sums[j]
         #if j == 0:
         #    print i, j, best_sum
         #    sys.stdout.flush()
@@ -497,7 +500,7 @@ def _sn_norecur(ncands, candsarray, distsarray, cur_assignments, cur_sums, tmp_a
             #### GO UP
             delta = -1
         else:
-            tmp_sum = cur_sum + distsarray[j,i]
+            tmp_sum = cur_sums[j] + distsarray[j,i]
             if tmp_sum > best_sum:
                 # if we are already greater than the best sum, bail. we
                 # can bail all the way out of this branch because all
