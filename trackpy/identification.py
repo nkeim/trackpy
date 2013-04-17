@@ -102,7 +102,7 @@ def subpixel_centroid(img, local_maxes, mask_rad, struct_shape='circle'):
     so = [slice(-mask_rad, mask_rad + 1)] * dim
     # Make circular structuring element
     if struct_shape == 'circle':
-        d_struct = (np.sum(np.mgrid[so]**2, 0) < mask_rad**2).astype(np.int8) # NCK IMPROVEMENT
+        d_struct = (np.sum(np.mgrid[so]**2, 0) <= mask_rad**2).astype(np.int8)
     elif struct_shape == 'diamond':
         s = ndimage.generate_binary_structure(dim, 1)
         # scale it up to the desired size
