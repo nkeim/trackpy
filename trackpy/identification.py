@@ -24,7 +24,7 @@ from scipy import ndimage
 import itertools
 
 
-def find_local_max(img, d_rad, threshold=1e-15):
+def find_local_max(img, d_rad, threshold=1e-15, inplace=False):
     """
     This is effectively a replacement for pkfnd in the matlab/IDL code.
 
@@ -35,11 +35,16 @@ def find_local_max(img, d_rad, threshold=1e-15):
     :param img: an ndarray representing the data to find the local maxes
     :param d_rad: the radius of the dilation, the smallest possible spacing between local maximum
     :param threshold: optional, voxels < threshold are ignored.
+    :param inplace: If True, `img` is modified.
 
     :rtype: (d,N) array of the local maximums.
     """
     d_rad = int(d_rad)
-    img = np.array(np.squeeze(img))       # knock out singleton dimensions
+    # knock out singleton dimensions, 
+    # and prepare to change values in thresholding step.
+    img = np.array(np.squeeze(img))
+    if not inplace:
+        img = img.copy() # Otherwise we could mess up use of 'img' by subsequent code.
     img[img < threshold] = -np.inf        # mask out pixels below threshold
     dim = img.ndim                        # get the dimension of data
 
@@ -55,7 +60,8 @@ def find_local_max(img, d_rad, threshold=1e-15):
     # find the locations that are the local maximum
     # TODO clean this up
     local_max = np.where(np.exp(img - dilated_img) > (1 - 1e-15))
-    # the extra [::-1] is because matplotlib and ndimage disagree an xy vs yx
+    # the extra [::-1] is because matplotlib and ndimage disagree an xy vs yx.
+    # Finally, there should be nothing within 'd_rad' of the edges of the image
     return np.vstack(local_max[::-1])
 
 @numba.autojit
@@ -82,6 +88,22 @@ def _refine_centroids_loop(img, local_maxes, mask_rad, offset_masks, d_struct, r
         results[2, i] = mass
         results[3, i] = r2
     return results
+def local_max_crop(img, local_maxes, mask_rad):
+    """Prepare local maxes for centroid-finding by removing ones within
+    'mask_rad' of the image edges.
+    
+    Returns a shortened 'local_maxes' array.
+    """
+    return local_maxes.compress(
+            _local_max_within_bounds(img.shape, local_maxes, mask_rad), axis=1)
+def _local_max_within_bounds(shape, local_maxes, mask_rad):
+    """Determine which of 'local_maxes' is within the bounds 'shape'.
+    Return array with same length as axis 1 of local_maxes.
+    """
+    lm = local_maxes
+    return (lm[0,:] >= mask_rad) & (lm[1,:] >= mask_rad) & \
+            (lm[0,:] <= shape[1] - 1 - mask_rad) & \
+            (lm[1,:] <= shape[0] - 1 - mask_rad)
 def subpixel_centroid(img, local_maxes, mask_rad, struct_shape='circle'):
     '''
     This is effectively a replacement for cntrd in the matlab/IDL code.
@@ -95,10 +117,17 @@ def subpixel_centroid(img, local_maxes, mask_rad, struct_shape='circle'):
 
     :rtype: (d,N) array of positions, (d,) array of masses, (d,) array of r2,
     '''
+    # First, check that all local maxes are within 'mask_rad' of the image
+    # edges. Otherwise we will be going outside the bounds of the array in
+    # _refine_centroids_loop()
+    if not all(_local_max_within_bounds(img.shape, local_maxes, mask_rad)):
+        raise IndexError('One or more local maxes are too close to the image edge. Use local_max_crop().')
+    # Make coordinate order compatible with upcoming code
     local_maxes = local_maxes[::-1]
     # do some data checking/munging
     img = np.squeeze(img)                 # knock out singleton dimensions
     dim = img.ndim
+    if dim > 2: raise ValueError('Use subpixel_centroid_nd() for dimension > 2')
     so = [slice(-mask_rad, mask_rad + 1)] * dim
     # Make circular structuring element
     if struct_shape == 'circle':
