@@ -482,7 +482,7 @@ def _sn_norecur(ncands, candsarray, distsarray, cur_assignments, cur_sums, tmp_a
     j = 0
     while 1:
         itercount += 1
-        if itercount >= 100000000:
+        if itercount >= 500000000:
             return -1.0
         delta = 0 # What to do at the end
         # This is an endless loop. We go up and down levels of recursion,
