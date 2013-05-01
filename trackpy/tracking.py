@@ -285,12 +285,9 @@ def link_iter(levels, search_range, memory=0, track_cls=TrackNoStore, iterable=T
         # create a second copy that will be used as the source in
         # the next loop
         tmp_set = set(cur_level)
-        # memory set
-        new_mem_set = set()
 
         # fill in first 'cur' hash and set up attributes for keeping
         # track of possible connections
-
         for p in cur_set:
             p.back_cands = []
             p.forward_cands = []
@@ -362,29 +359,28 @@ def link_iter(levels, search_range, memory=0, track_cls=TrackNoStore, iterable=T
             best_pairs = link_subnet(s_sn, search_range)
             spl, dpl = zip(*best_pairs)
 
-            # strip the distance information off the subnet sets and
-            # remove the linked particles
-            d_remain = set([d for d in d_sn])
-            d_remain -= set(dpl)
-            s_remain = set([s for s in s_sn])
-            s_remain -= set(spl)
-
-            for sp, dp in best_pairs:
-                # do linking and clean up
-                sp.track.add_point(dp)
-                del dp.back_cands
-                del sp.forward_cands
-            for sp in s_remain:
-                # clean up
-                del sp.forward_cands
+            # Identify the particles in the destination set that were not linked to
+            d_remain = set(d for d in d_sn if d is not None)
+            d_remain -= set(d for d in dpl if d is not None)
             for dp in d_remain:
                 # if unclaimed destination particle, a track in born!
                 track_lst.append(track_cls(dp))
                 # clean up
                 del dp.back_cands
-            # tack all of the unmatched source particles into the new
-            # memory set
-            new_mem_set |= s_remain
+
+            new_mem_set = set()
+            for sp, dp in zip(spl, dpl):
+                # do linking and clean up
+                if sp is not None and dp is not None:
+                    sp.track.add_point(dp)
+                if dp is not None:
+                    del dp.back_cands
+                if sp is not None:
+                    del sp.forward_cands
+                    if dp is None:
+                        # add the unmatched source particles to the new
+                        # memory set
+                        new_mem_set.add(sp)
 
         # set prev_hash to cur hash
         prev_hash = cur_hash
@@ -398,7 +394,8 @@ def link_iter(levels, search_range, memory=0, track_cls=TrackNoStore, iterable=T
             mem_set |= new_mem_set
             # add the memory particles to what will be the next source
             # set
-            tmp_set |= mem_set # add memory points to prev_hash (to be used as the next source)
+            tmp_set |= mem_set
+            # add memory points to prev_hash (to be used as the next source)
             for m in mem_set:
                 # add points to the hash
                 prev_hash.add_point(m)
