@@ -265,6 +265,7 @@ def link_iter(levels, search_range, memory=0, track_cls=TrackNoStore, iterable=T
 
     # assume everything in first level starts a track
     # initialize the master track list with the points in the first level
+    track_cls.count = 0 # Incompatible with multithreading
     track_lst = [track_cls(p) for p in prev_set]
     if iterable: yield track_cls.flush()
     mem_set = set()
