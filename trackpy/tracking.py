@@ -360,8 +360,8 @@ def link_iter(levels, search_range, memory=0, track_cls=TrackNoStore, iterable=T
             spl, dpl = zip(*best_pairs)
 
             # Identify the particles in the destination set that were not linked to
-            d_remain = set(d for d in d_sn if d is not None)
-            d_remain -= set(d for d in dpl if d is not None)
+            d_remain = set(d_sn)
+            d_remain -= set(dpl)
             for dp in d_remain:
                 # if unclaimed destination particle, a track in born!
                 track_lst.append(track_cls(dp))
@@ -417,7 +417,7 @@ def link_iter(levels, search_range, memory=0, track_cls=TrackNoStore, iterable=T
 class SubnetOversizeException(Exception):
     '''An :py:exc:`Exception` to be raised when the sub-nets are too
     big to be efficiently linked.  If you get this then either reduce your search range
-    or increase :py:attr:`sub_net_linker.MAX_SUB_NET_SIZE`'''
+    or increase :py:attr:`link_subnet.MAX_SUB_NET_SIZE`'''
     pass
 
 def link_subnet(s_sn, search_radius):
