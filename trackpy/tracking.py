@@ -297,15 +297,17 @@ def link_iter(levels, search_range, memory=0, track_cls=TrackNoStore, iterable=T
         # sort out what can go to what
         query = prev_hash.kdtree.query
         hashpts = prev_hash.points
+        hashpts_len = len(hashpts)
+        # TODO: In scipy >= 0.12, all neighbors for all particles can be found in one call!
         for p in cur_level:
             # get
             dists, inds = query(p.pos, 10, distance_upper_bound=search_range)
             for d, i in zip(dists, inds):
-                try:
+                if i < hashpts_len:
                     wp = hashpts[i]
                     p.back_cands.append((wp, d))
                     wp.forward_cands.append((p, d))
-                except IndexError:
+                else:
                     # cKDTree signals no more neighbors by returning an out-of-bounds index
                     break
 
