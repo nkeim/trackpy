@@ -459,7 +459,8 @@ def link_subnet(s_sn, search_radius):
     cur_assignments = np.ones((nj,), dtype=np.int64) * -1
     tmp_assignments = np.zeros((nj,), dtype=np.int64)
     cur_sums = np.zeros((nj,), dtype=np.float64)
-    bestsum = _sn_norecur(ncands, candsarray, distsarray, cur_assignments, cur_sums,
+    # In the next line, distsarray is passed in quadrature so that adding distances works.
+    bestsum = _sn_norecur(ncands, candsarray, distsarray**2, cur_assignments, cur_sums,
             tmp_assignments, best_assignments)
     if bestsum < 0:
         raise SubnetOversizeException('Exceeded max iterations for subnet. Try reducing search_range.')
@@ -467,7 +468,7 @@ def link_subnet(s_sn, search_radius):
     return [(src_net[j], dcands[i]) for j, i in enumerate(best_assignments) if i >= 0]
 
 @numba.autojit
-def _sn_norecur(ncands, candsarray, distsarray, cur_assignments, cur_sums, tmp_assignments, best_assignments):
+def _sn_norecur(ncands, candsarray, dists2array, cur_assignments, cur_sums, tmp_assignments, best_assignments):
     """Find the optimal track assigments for a subnetwork, without recursion.
 
     This is for nj source particles. All arguments are arrays with nj rows.
@@ -501,7 +502,7 @@ def _sn_norecur(ncands, candsarray, distsarray, cur_assignments, cur_sums, tmp_a
             #### GO UP
             delta = -1
         else:
-            tmp_sum = cur_sums[j] + distsarray[j,i]
+            tmp_sum = cur_sums[j] + dists2array[j,i]
             if tmp_sum > best_sum:
                 # if we are already greater than the best sum, bail. we
                 # can bail all the way out of this branch because all
