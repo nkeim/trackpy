@@ -4,7 +4,7 @@ from path import path
 def use(directory, taskfile='taskfile.py', **kw):
     """Return an object for 'directory' that gives access to its tasks.
 
-    This is an instance of TaskMan (or a subclass thereof) that is defined and
+    This is an instance of Tasker (or a subclass thereof) that is defined and
     set up in the use() function, contained in 'taskfile' (default "taskfile.py").
 
     Searches upward from 'directory' to find the relevant 'taskfile'. 'taskfile'

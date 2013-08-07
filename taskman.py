@@ -32,7 +32,7 @@ class TaskUnit(object):
         'ins' is some data structure (preferably list or dict) populated
             with filenames, FileBase instances, or other TaskUnit instances.
         'outs' is a filename or FileBase instance, or a list thereof.
-        'taskman' is a parent TaskMan instance, which presently serves to 
+        'taskman' is a parent Tasker instance, which presently serves to 
             set the working directory for this task.
 
         When 'func' is called, it takes a single argument which is structured
@@ -167,12 +167,12 @@ class TaskUnit(object):
         for f in self.output_files:
             if f.isdir(): f.rmtree()
             elif f.isfile(): f.unlink()
-class TaskMan(DirBase):
+class Tasker(DirBase):
     """Object to set up tasks within a single directory.
     
     Initialize with the directory name."""
     def __init__(self, dirname):
-        super(TaskMan, self).__init__(dirname)
+        super(Tasker, self).__init__(dirname)
         self.tasks = {}
         self.conf = {}
     def __call__(self, ins, outs):

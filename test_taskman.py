@@ -13,8 +13,8 @@ def test_uniq():
     if cmp(from_uniq, from_sort) != 0:
         raise AssertionError('%r != %r' % (from_uniq, from_sort))
 
-class TaskManSubclass(taskman.TaskMan):
-    # Users will be encouraged to subclass TaskMan, so we might as well do it here.
+class TaskerSubclass(taskman.Tasker):
+    # Users will be encouraged to subclass Tasker, so we might as well do it here.
     # Here they could also define reader methods to read and process files in the
     # directory, outside of the pipeline (but perhaps invoking it).
     pass
@@ -23,7 +23,7 @@ class TestTaskman(unittest.TestCase):
     def enter_dir(self, dirname):
         """Set up a sample pipeline in a directory. 
         Tests depend on sample data defined here."""
-        task = TaskManSubclass(dirname)
+        task = TaskerSubclass(dirname)
         # Totally arbitrary configuration "scheme"
         task.conf = dict(one='one_str', two=2.0, name=task.name) 
         task.one_count = 0

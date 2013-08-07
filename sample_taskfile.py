@@ -1,8 +1,8 @@
 # The package will provide a function to (re)load this file and extract this function.
-from tasker import TaskMan, JSON, Pandas
+from tasker import Tasker, JSON, Pandas
 import pandas
 
-class MovieTasker(TaskMan):
+class MovieTasker(Tasker):
     # This could have @cachedprop attributes, basic metadata, etc.
     pass
 def use(dirname):
