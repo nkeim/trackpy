@@ -17,6 +17,14 @@ def _uniq(l):
     for item in l:
         if item not in r: r.append(item)
     return r
+def _nestmap(fcn, data_part):
+    """Works like map() but preserves nested structures of dicts, lists, and tuples."""
+    if isinstance(data_part, dict):
+        return {k: _nestmap(fcn, data_part[k]) for k in data_part}
+    elif isinstance(data_part, (list, tuple)):
+        return [_nestmap(fcn, v) for v in data_part]
+    else:
+        return fcn(data_part)
 class TaskUnit(object):
     def __init__(self, func, ins, outs, taskman):
         """Create a task.
@@ -29,10 +37,13 @@ class TaskUnit(object):
 
         When 'func' is called, it takes a single argument which is structured
         like 'ins', but with FileBase instances replaced with those files' contents,
-        and with each TaskUnit instance replaced with a dict that contains that TaskUnit's
-        outputs, accessed through enumeration, basename, or full filename.
-        'func' returns a list which corresponds to the elements of 'outs'. Elements
-        not corresponding to a FileBase instance are ignored.
+        and with each TaskUnit instance replaced with a list (or single value)
+        corresponding to that TaskUnit's outputs.
+
+        'func' returns a list (or single value) which corresponds to the elements of 
+        'outs'. Elements not corresponding to a FileBase instance are ignored; the
+        contents of those files must be writen with code inside 'func',
+        and read by a separate function.
 
         In general, any filename can be either relative to the task's working directory.
         or absolute. 'func' will always be executed in the task's working directory.
@@ -59,29 +70,19 @@ class TaskUnit(object):
         else:
             fn = path(fileobj)
         if fn.isabs(): return fn
-        else: return (self.p / fn).abspath()
+        else: return (self.p / fn).normpath().abspath()
     def _prepare_data(self, data_part):
-        """Returns input data for self.func(), mirroring the structure of 'data_part'.
-        
-        This needs to be run in my working dir."""
+        """Resolves 'data_part' into its run-time representation.
+
+        Tasks are resolved into their outputs. FileBase instances become their contents. 
+        """
         if isinstance(data_part, (str, path)): # Literal filename
             return self._get_filename(data_part)
         elif isinstance(data_part, FileBase): # Formatted file
-            with self.p:
-                return data_part.read()
+            return data_part.read()
         elif isinstance(data_part, TaskUnit): # Another task
-            d = {} # To be populated with various aliases for the data
-            for i, indatum in enumerate(data_part.outs):
-                infile = data_part._get_filename(indatum)
-                data = indatum._prepare_data(indatum) # Continued in that task's dir
-                d.update({k: data for k in (os.path.basename(infile), \
-                        os.path.splitext(os.path.basename(infile))[0], i)})
-            return d
-        # Cases to allow nesting
-        elif isinstance(data_part, dict):
-            return {k: self._prepare_data(data_part[k]) for k in data_part}
-        elif isinstance(data_part, (list, tuple)):
-            return [self._prepare_data(v) for v in data_part]
+            # Continued by that task, so that its working dir, etc. are used
+            return _nestmap(data_part._prepare_data, data_part.outs_as_given)
         else:
             raise ValueError('%r does not specify a valid input source' % data_part)
     def _flatten_dependencies(self):
@@ -131,14 +132,20 @@ class TaskUnit(object):
         """
         # We return a dict in which the values are referred to by various names,
         # the wame way we pass input data to self.func() itself.
-        with self.p: return self._prepare_data(self.outs_as_given)
+        return _nestmap(self._prepare_data, self.outs_as_given)
     def run(self):
-        """Execute task (always) and write output files in recognized formats."""
-        with self.p:
-            outdata = _listify(self.func(self._prepare_data(self.ins_as_given)))
+        """Execute task (always) and write output files in recognized formats.
+        
+        Temporarily changes to task's working directory."""
+        _old_dir = os.getcwd()
+        try:
+            os.chdir(self.p)
+            outdata = _listify(self.func(_nestmap(self._prepare_data, self.ins_as_given)))
             assert len(outdata) == len(self.outs)
             for of, od in zip(self.outs, outdata):
                 if isinstance(of, FileBase): of.save(od)
+        finally:
+            os.chdir(_old_dir)
     def sync(self):
         """run() task if required to keep outputs up to date."""
         for it in self.input_tasks: it.sync() # Really, really inefficient
@@ -157,7 +164,7 @@ class TaskUnit(object):
         return r
     def clear(self):
         """Delete this task's output files and directories."""
-        for f in self.output_files():
+        for f in self.output_files:
             if f.isdir(): f.rmtree()
             elif f.isfile(): f.unlink()
 class TaskMan(DirBase):
@@ -168,13 +175,18 @@ class TaskMan(DirBase):
         super(TaskMan, self).__init__(dirname)
         self.tasks = {}
         self.conf = {}
-    def __call__(self, ins=None, outs=None):
+    def __call__(self, ins, outs):
         """Returns a decorator that turns the function into a task 
         with registered inputs and outputs."""
-        if ins is None: ins = []
-        if outs is None: outs = []
+        # If FileBase instances in 'ins' and 'outs' do not refer to absolute paths,
+        # they need to be made relative to our working dir.
+        def rectify_filepath(iospec):
+            if isinstance(iospec, FileBase):
+                iospec.set_parentdir(self.p)
+            return iospec
         def mktask(func): 
-            t = TaskUnit(func, ins, outs, self)
+            t = TaskUnit(func, _nestmap(rectify_filepath, ins), 
+                    _nestmap(rectify_filepath, outs), self)
             self.tasks[t.__name__] = t
             setattr(self, t.__name__, t)
             return t
@@ -190,6 +202,6 @@ class TaskMan(DirBase):
                 return t
     def clear(self):
         """Removes all output files of all tasks."""
-        for t in self.tasks:
+        for t in self.tasks.values():
             t.clear()
 

@@ -1,6 +1,7 @@
 from .storage import *
 
-import tempfile
+import tempfile, shutil
+import unittest
 import numpy
 
 def test_Pandas():
@@ -31,3 +32,16 @@ def test_JSON():
     finally:
         os.unlink(pobj.filename)
 
+class parentdir(unittest.TestCase):
+    def test_parentdir(self):
+        """Check whether the file reference can be made absolute after construction."""
+        data = dict(one=1, two=2.0, three=[4, 5])
+        testdir = path(tempfile.mkdtemp(dir='.'))
+        try:
+            pobj = JSON('test.json')
+            pobj.set_parentdir(testdir)
+            pobj.save(data)
+            pobj.read()
+            assert (testdir / 'test.json').exists()
+        finally:
+            shutil.rmtree(testdir)
