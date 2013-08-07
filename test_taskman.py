@@ -19,7 +19,7 @@ class TaskManSubclass(taskman.TaskMan):
     # directory, outside of the pipeline (but perhaps invoking it).
     pass
 
-class test_Taskman(unittest.TestCase):
+class TestTaskman(unittest.TestCase):
     def enter_dir(self, dirname):
         """Set up a sample pipeline in a directory. 
         Tests depend on sample data defined here."""
@@ -85,7 +85,6 @@ class test_Taskman(unittest.TestCase):
         """Make sure full depth of task tree is traversed."""
         self.task.four() # Should be making one(), two(), etc.
         assert (self.testdir / 'one.json').exists()
-    @unittest.skip
     def test_load(self):
         self.task.two()
         self.task.two.load()
