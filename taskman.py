@@ -11,26 +11,25 @@ def _listify(arg):
         return [arg,]
 def _toFiles(names):
     return [path(n) for n in names]
-def _uniq(self, l):
+def _uniq(l):
     """Removes duplicates from a list, preserving order."""
     r = []
-    while l:
-        t = l.pop(0)
-        if t not in r: r.append(t)
+    for item in l:
+        if item not in r: r.append(item)
     return r
-class Task(object):
+class TaskUnit(object):
     def __init__(self, func, ins, outs, taskman):
         """Create a task.
         'func' is a function which turns 'ins' into 'outs'.
         'ins' is some data structure (preferably list or dict) populated
-            with filenames, FileBase instances, or other Task instances.
+            with filenames, FileBase instances, or other TaskUnit instances.
         'outs' is a filename or FileBase instance, or a list thereof.
         'taskman' is a parent TaskMan instance, which presently serves to 
             set the working directory for this task.
 
         When 'func' is called, it takes a single argument which is structured
         like 'ins', but with FileBase instances replaced with those files' contents,
-        and with each Task instance replaced with a dict that contains that Task's
+        and with each TaskUnit instance replaced with a dict that contains that TaskUnit's
         outputs, accessed through enumeration, basename, or full filename.
         'func' returns a list which corresponds to the elements of 'outs'. Elements
         not corresponding to a FileBase instance are ignored.
@@ -46,9 +45,11 @@ class Task(object):
         self.__doc__ = func.__doc__
         self.taskman = taskman
         self.p = self.taskman.p # This directory will always be my working dir
+        self.outs_as_given = outs
         self.outs = _listify(outs)
         self.output_files = map(self._get_filename, self.outs)
-        self.ins = ins
+        self.ins_as_given = ins
+        self.ins = _listify(ins)
         self.input_files, self.input_tasks = self._flatten_dependencies()
     # Deal with arbitrary user specification of task inputs
     def _get_filename(self, fileobj):
@@ -59,67 +60,81 @@ class Task(object):
             fn = path(fileobj)
         if fn.isabs(): return fn
         else: return (self.p / fn).abspath()
-    def _prepare_data(self, ins):
+    def _prepare_data(self, data_part):
         """Returns input data for self.func(), mirroring the structure of 'ins'.
         
         This needs to be run in my working dir."""
-        # Walk whatever data structure was given to us
-        if isinstance(ins, str):
-            return path(str).abspath()
-        elif isinstance(ins, FileBase):
-            return ins.read()
-        elif isinstance(ins, Task):
+        if isinstance(data_part, (str, path)): # Literal filename
+            return path(data_part).abspath()
+        elif isinstance(data_part, FileBase): # Formatted file
+            return data_part.read()
+        elif isinstance(data_part, TaskUnit): # Another task
             d = {} # To be populated with various aliases for the data
-            for i, infile in enumerate(ins.outs):
-                data = self._prepare_data(infile) # goes to _load_file()
-                d.update({k: data for k in (str(infile), os.path.basename(infile), \
+            for i, indatum in enumerate(data_part.outs):
+                infile = data_part._get_filename(indatum)
+                data = self._prepare_data(indatum) # goes to _load_file()
+                d.update({k: data for k in (os.path.basename(infile), \
                         os.path.splitext(os.path.basename(infile))[0], i)})
             return d
-        elif isinstance(ins, dict):
-            return {k: self._prepare_data(ins[k]) for k in ins}
-        elif isinstance(ins, (list, tuple)):
-            return [self._prepare_data(v) for v in ins]
+        # Cases to allow nesting
+        elif isinstance(data_part, dict):
+            return {k: self._prepare_data(data_part[k]) for k in data_part}
+        elif isinstance(data_part, (list, tuple)):
+            return [self._prepare_data(v) for v in data_part]
+        else:
+            raise ValueError('%r does not specify a valid input source' % data_part)
     def _flatten_dependencies(self):
         """Returns a list of files and a list of tasks.
         Files are returned as absolute paths."""
         deps = self._flatten_dependencies_recurse(self.ins)
         files, tasks = set(), set()
         for v in deps:
-            if isinstance(v, Task): tasks.add(v)
+            if isinstance(v, TaskUnit): tasks.add(v)
         # File paths should be relative to my working dir.
         return [f if f.isabs() else (self.p / f).abspath() \
                 for f in _toFiles(list(files))], \
                 list(tasks)
-    def _flatten_dependencies_recurse(self, ins):
+    def _flatten_dependencies_recurse(self, in_part):
         """Walks the 'self.ins' data structure in a manner similar to _prepare_inputs()"""
-        flatten = lambda seq: reduce((lambda a,b: a+b), seq)
-        if isinstance(ins, (str, FileBase, Task)):
-            return [ins,]
-        elif isinstance(ins, dict):
-            return flatten([self._flatten_dependencies_recurse(v) for v in ins.values()])
-        elif isinstance(ins, (list, tuple)):
-            return flatten([self._flatten_dependencies_recurse(v) for v in ins])
+        flatten = lambda seq: reduce((lambda a,b: a+b), seq, [])
+        if isinstance(in_part, (str, FileBase, TaskUnit)):
+            return [in_part,]
+        elif isinstance(in_part, dict):
+            return flatten([self._flatten_dependencies_recurse(v) \
+                    for v in in_part.values()])
+        elif isinstance(in_part, (list, tuple)):
+            return flatten([self._flatten_dependencies_recurse(v) for v in in_part])
         else:
             raise ValueError('Part of input specification could not be handled: %s' \
-                    % repr(ins))
+                    % repr(in_part))
     def __repr__(self):
-        return 'Task: ' + self.func.__name__
+        return 'TaskUnit: ' + self.func.__name__
     def __hash__(self):
         return id(self) # So we can put these in sets
     # Public interface
     def __call__(self):
-        """Update outputs if necessary and read from disk."""
-        self.refresh()
+        """Update outputs if necessary and read from disk. 
+        
+        See load() for details of return value."""
+        self.sync()
         return self.load()
     def load(self):
-        """Read output files and return their contents as a dictionary."""
+        """Return representation of task output on disk.
+
+        Structure is the same as in the task definition --- a single
+        value or a sequence of values.
+
+        Where a FileBase instance was used (i.e. a recognized file format like JSON()),
+        the contents of the file are returned. Otherwise, the path to the file is
+        returned.
+        """
         # We return a dict in which the values are referred to by various names,
         # the wame way we pass input data to self.func() itself.
-        with self.p: return self._prepare_data(self.outs)
+        with self.p: return self._prepare_data(self.outs_as_given)
     def run(self):
         """Execute task (always) and write output files in recognized formats."""
         with self.p:
-            outdata = _listify(self.func(self._prepare_inputs(self.ins)))
+            outdata = _listify(self.func(self._prepare_data(self.ins_as_given)))
             assert len(outdata) == len(self.outs)
             for of, od in zip(self.outs, outdata):
                 if isinstance(of, FileBase): of.save(od)
@@ -158,17 +173,22 @@ class TaskMan(DirBase):
         if ins is None: ins = []
         if outs is None: outs = []
         def mktask(func): 
-            t = Task(func, ins, outs, self)
+            t = TaskUnit(func, ins, outs, self)
             self.tasks[t.__name__] = t
             setattr(self, t.__name__, t)
             return t
         return mktask
     def which(self, filename):
-        """Return the Task instance that is responsible for 'filename',
-        which can be relative to this instance's workin dir, or absolute."""
+        """Return the TaskUnit instance that is responsible for 'filename',
+        which can be relative to this instance's working dir, or absolute."""
         fnp = path.filename
         if fnp.isabs: fnp_abs = fnp
         else: fnp_abs = (self.p / fnp).abspath()
         for t in self.tasks:
             if fnp_abs in t.output_files:
                 return t
+    def clear(self):
+        """Removes all output files of all tasks."""
+        for t in self.tasks:
+            t.clear()
+
