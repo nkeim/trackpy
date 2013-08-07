@@ -61,18 +61,19 @@ class TaskUnit(object):
         if fn.isabs(): return fn
         else: return (self.p / fn).abspath()
     def _prepare_data(self, data_part):
-        """Returns input data for self.func(), mirroring the structure of 'ins'.
+        """Returns input data for self.func(), mirroring the structure of 'data_part'.
         
         This needs to be run in my working dir."""
         if isinstance(data_part, (str, path)): # Literal filename
-            return path(data_part).abspath()
+            return self._get_filename(data_part)
         elif isinstance(data_part, FileBase): # Formatted file
-            return data_part.read()
+            with self.p:
+                return data_part.read()
         elif isinstance(data_part, TaskUnit): # Another task
             d = {} # To be populated with various aliases for the data
             for i, indatum in enumerate(data_part.outs):
                 infile = data_part._get_filename(indatum)
-                data = self._prepare_data(indatum) # goes to _load_file()
+                data = indatum._prepare_data(indatum) # Continued in that task's dir
                 d.update({k: data for k in (os.path.basename(infile), \
                         os.path.splitext(os.path.basename(infile))[0], i)})
             return d
