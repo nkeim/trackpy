@@ -317,6 +317,8 @@ def link_iter(levels, search_range, memory=0, track_cls=TrackNoStore, iterable=T
             p.back_cands.sort(key=lambda x: x[1])
         for p in prev_set:
             p.forward_cands.sort(key=lambda x: x[1])
+
+        new_mem_set = set()
         # while there are particles left to link, link
         while len(prev_set) > 0 and len(cur_set) > 0:
             p = cur_set.pop()
@@ -372,7 +374,6 @@ def link_iter(levels, search_range, memory=0, track_cls=TrackNoStore, iterable=T
                 # clean up
                 del dp.back_cands
 
-            new_mem_set = set()
             for sp, dp in zip(spl, dpl):
                 # do linking and clean up
                 if sp is not None and dp is not None:
