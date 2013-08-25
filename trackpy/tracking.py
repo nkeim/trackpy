@@ -28,7 +28,10 @@ class TreeFinder(object):
         """
         self.points = points
         coords = np.array([pt.pos for pt in points])
-        self.kdtree = cKDTree(coords, max(3, int(round(np.log10(len(points)))))) # This could be tuned
+        n = len(points)
+        if n == 0:
+            raise ValueError('Frame (aka level) contains zero points')
+        self.kdtree = cKDTree(coords, max(3, int(round(np.log10(n))))) # This could be tuned
 class Track(object):
     '''
     :param point: The first feature in the track if not  `None`.
@@ -237,7 +240,7 @@ def link(levels, search_range, memory=0, track_cls=Track):
             iterable=False).next()
 def link_iter(levels, search_range, memory=0, track_cls=TrackNoStore, iterable=True):
     '''
-    :param levels: Iterable of iterables of :py:class:`~trapy.tracking.Point` objects
+    :param levels: :py:class:`~trackpy.tracking.Point` objects
     :type levels: Iterable of iterables
     :param search_range: the maximum distance features can move between frames
     :param memory: the maximum number of frames that a feature can skip along a track
@@ -247,11 +250,12 @@ def link_iter(levels, search_range, memory=0, track_cls=TrackNoStore, iterable=T
 
     Generic version of linking algorithm, should work for any
     dimension.  All information about dimensionality and the metric
-    are handled by scipy.spatial.cKDTree
+    are handled by :py:class:`scipy.spatial.cKDTree`
 
-    If 'iterable', uses the flush() method of `track_cls` to spit out newly-tracked 
-    particles each time it finishes processing a level. (You should use TrackNoStore 
-    for `track_cls.) Otherwise, returns the complete list of track objects at the end.
+    If ``iterable``, uses the ``flush()`` method of ``track_cls`` to spit out newly-tracked 
+    particles each time it finishes processing a level. (You should use 
+    :py:class:`~trackpy.tracking.TrackNoStore` for ``track_cls``.) 
+    Otherwise, returns the complete list of track objects at the end.
     '''
     # initial source set
     lev_iter = iter(levels)
@@ -424,7 +428,7 @@ def link_subnet(s_sn, search_radius):
     """Recursively find the optimal bonds for a group of particles between 2 frames.
     
     This is only invoked when there is more than one possibility within
-    'search_radius'.
+    ``search_radius``.
     """
     # The basic idea: replace Point objects with integer indices into lists of Points.
     # Then the hard part (recursion) runs quickly because it is just passing arrays.
@@ -434,7 +438,7 @@ def link_subnet(s_sn, search_radius):
     src_net = list(s_sn)
     nj = len(src_net) # j will index the source particles
     if nj > MAX_SUB_NET_SIZE:
-        raise SubnetOversizeException('sub net contains %d points' % nj)
+        raise SubnetOversizeException('search_range (aka maxdisp) too large for reasonable performance on these data (sub net contains %d points)' % nj)
     # Build arrays of all destination (forward) candidates and their distances
     dcands = set()
     for p in src_net:
@@ -450,7 +454,7 @@ def link_subnet(s_sn, search_radius):
     for j, sp in enumerate(src_net):
         ncands[j] = len(sp.forward_cands)
         if ncands[j] > max_candidates:
-            raise SubnetOversizeException('Particle has %i forward candidates --- too many' % ncands[j])
+            raise SubnetOversizeException('search_range (aka maxdisp) too large for reasonable performance on these data (particle has %i forward candidates)' % ncands[j])
         candsarray[j,:ncands[j]] = [dcands_map[cand] for cand, dist in sp.forward_cands]
         distsarray[j,:ncands[j]] = [dist for cand, dist in sp.forward_cands]
     # The assignments are persistent across levels of the recursion
@@ -462,7 +466,7 @@ def link_subnet(s_sn, search_radius):
     bestsum = _sn_norecur(ncands, candsarray, distsarray**2, cur_assignments, cur_sums,
             tmp_assignments, best_assignments)
     if bestsum < 0:
-        raise SubnetOversizeException('Exceeded max iterations for subnet. Try reducing search_range.')
+        raise SubnetOversizeException('search_range (aka maxdisp) too large for reasonable performance on these data (exceeded max iterations for subnet)')
     # Remove null links and return particle objects
     return [(src_net[j], dcands[i]) for j, i in enumerate(best_assignments) if i >= 0]
 
