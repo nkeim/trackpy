@@ -250,3 +250,28 @@ texinfo_documents = [
 intersphinx_mapping = {'python': ('http://docs.python.org/2.7', None),
                        'numpy': ('http://docs.scipy.org/doc/numpy',None),
                        }
+
+# Mock modules to avoid ImportErrors when building docs
+# Added by Nathan Keim, 130825
+# See http://docs.readthedocs.org/en/latest/faq.html#my-project-isn-t-building-with-autodoc
+class Mock(object):
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def __call__(self, *args, **kwargs):
+        return Mock()
+
+    @classmethod
+    def __getattr__(cls, name):
+        if name in ('__file__', '__path__'):
+            return '/dev/null'
+        elif name[0] == name[0].upper():
+            mockType = type(name, (), {})
+            mockType.__module__ = __name__
+            return mockType
+        else:
+            return Mock()
+
+MOCK_MODULES = ['numba', 'scipy', 'scipy.spatial', 'numpy', 'numpy.random']
+for mod_name in MOCK_MODULES:
+    sys.modules[mod_name] = Mock()
