@@ -27,8 +27,18 @@ class TreeFinder(object):
         """Takes a list of particles.
         """
         self.points = points
-        coords = np.array([pt.pos for pt in points])
-        n = len(points)
+        self.rebuild()
+    def add_point(self, pt):
+        self.points.append(pt)
+    def rebuild(self):
+        """Rebuilds tree from ``points`` attribute.
+
+        Needs to be called after ``add_point()`` and before tree is used for 
+        spatial queries again (i.e. when memory is turned on).
+        """
+
+        coords = np.array([pt.pos for pt in self.points])
+        n = len(self.points)
         if n == 0:
             raise ValueError('Frame (aka level) contains zero points')
         self.kdtree = cKDTree(coords, max(3, int(round(np.log10(n))))) # This could be tuned
@@ -215,6 +225,8 @@ class PointND(Point):
         Point.__init__(self)                  # initialize base class
         self.t = t                            # time
         self.pos = np.asarray(pos)            # position in ND space
+    def __repr__(self):
+        return '%s(%g, %r)' % (self.__class__.__name__, self.t, self.pos)
 
 class IndexedPointND(Point):
     '''
@@ -378,7 +390,7 @@ def link_iter(levels, search_range, memory=0, track_cls=TrackNoStore, iterable=T
                 # do linking and clean up
                 if sp is not None and dp is not None:
                     sp.track.add_point(dp)
-                if dp is not None:
+                if dp is not None: # Should never happen, actually
                     del dp.back_cands
                 if sp is not None:
                     del sp.forward_cands
@@ -406,10 +418,9 @@ def link_iter(levels, search_range, memory=0, track_cls=TrackNoStore, iterable=T
                 prev_hash.add_point(m)
                 # re-create the forward_cands list
                 m.forward_cands = []
+            if isinstance(prev_hash, TreeFinder):
+                prev_hash.rebuild()
         prev_set = tmp_set
-
-        # add in the memory points
-        # store the current level for use in next loop
 
         if iterable: yield track_cls.flush()
     if not iterable:
@@ -468,8 +479,10 @@ def link_subnet(s_sn, search_radius):
             tmp_assignments, best_assignments)
     if bestsum < 0:
         raise SubnetOversizeException('search_range (aka maxdisp) too large for reasonable performance on these data (exceeded max iterations for subnet)')
-    # Remove null links and return particle objects
-    return [(src_net[j], dcands[i]) for j, i in enumerate(best_assignments) if i >= 0]
+    # Return particle objects. Account for every source particle we were given. 
+    # 'None' denotes a null link and will be used for the memory feature.
+    return [(src_net[j], (dcands[i] if i >= 0 else None)) \
+            for j, i in enumerate(best_assignments)]
 
 @numba.autojit
 def _sn_norecur(ncands, candsarray, dists2array, cur_assignments, cur_sums, tmp_assignments, best_assignments):
