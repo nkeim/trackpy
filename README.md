@@ -37,4 +37,4 @@ If you're not using Anaconda, make sure you have the following Python packages:
 Documentation
 ---
 
-[Documentation](http://tacaswell.github.com/trackpy/)
+[Documentation](https://trackpy-numba.readthedocs.org)
