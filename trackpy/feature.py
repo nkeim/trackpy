@@ -160,6 +160,8 @@ def refine(raw_image, image, radius, coords, max_iterations=10, engine='auto',
         if walkthrough:
             raise ValueError("walkthrough is not availabe in the nubma engine")
         # Do some extra prep in pure Python that can't be done in numba.
+        image = np.asarray(image)
+        raw_image = np.asarray(raw_image)
         coords = np.array(coords, dtype=np.float_)
         shape = np.array(image.shape, dtype=np.int16)  # array, not tuple
         mask = binary_mask(radius, image.ndim)
@@ -225,7 +227,7 @@ def _refine(raw_image, image, radius, coords, max_iterations,
             # If we're off by less than half a pixel, interpolate.
             else:
                 # Here, coord is a float. We are off the grid.
-                neighborhood = ndimage.shift(neighborhood, -off_center, 
+                neighborhood = ndimage.shift(neighborhood, -off_center,
                                              order=2, mode='constant', cval=0)
                 new_coord = coord + off_center
                 # Disallow any whole-pixels moves on future iterations.
@@ -265,13 +267,29 @@ def _refine(raw_image, image, radius, coords, max_iterations,
 def _get_numba_refine_locals():
     """Establish types of local variables in _numba_refine(), in a way that's safe if there's no numba."""
     try:
-        from numba import double, int_
+        from numba import double, int_, bool_
     except ImportError:
         return {}
     else:
-        return dict(square0=int_, square1=int_, square_size=int_, Rg_=double, ecc_=double)
+        return dict(SHIFT_THRESH=double, GOOD_ENOUGH_THRESH=double,
+                    square0=int_, square1=int_, square_size=int_, Rg_=double,
+                    ecc_=double, mass_=double, ecc1=double, ecc2=double,
+                    signal_=double, allow_moves=bool_, do_move=bool_,
+                    oc=double, N=int_, result=double[:,:],
+                    final_coords=double[:,:], mass=double[:],
+                    Rg=double[:], ecc=double[:], signal=double[:],
+                    coord=double[:], cm_n=double[:],
+                    cm_i=double[:], off_center=double[:],
+                    new_coord=int_[:], )
 
-@try_numba_autojit(locals=_get_numba_refine_locals())
+import numba
+from numba import double, int_, bool_
+#numba.config.DEBUG = 1
+#@try_numba_autojit(locals=_get_numba_refine_locals())
+#@try_numba_autojit
+@numba.jit(double[:,:](int_[:,:], int_[:,:], int_, double[:,:],
+                int_, bool_, int_[:], int_[:,:], int_[:,:],
+                double[:,:], double[:,:]), locals=_get_numba_refine_locals())
 def _numba_refine(raw_image, image, radius, coords, max_iterations,
                   characterize, shape, mask, r2_mask, cmask, smask):
     SHIFT_THRESH = 0.6
@@ -282,17 +300,33 @@ def _numba_refine(raw_image, image, radius, coords, max_iterations,
     # Declare arrays that we will fill iteratively through loop.
     N = coords.shape[0]
     final_coords = np.empty_like(coords, dtype=np.float_)
-    mass = np.empty(N, dtype=np.float_)
-    Rg = np.empty(N, dtype=np.float_)
-    ecc = np.empty(N, dtype=np.float_)
-    signal = np.empty(N, dtype=np.float_)
-    coord = np.empty((2,), dtype=np.float_)
+    mass = np.zeros(N, dtype=np.float_)
+    Rg = np.zeros(N, dtype=np.float_)
+    ecc = np.zeros(N, dtype=np.float_)
+    signal = np.zeros(N, dtype=np.float_)
+    coord = np.zeros(2, dtype=np.float_)
 
     # Buffer arrays
-    cm_n = np.empty(2, dtype=np.float_)
-    cm_i = np.empty(2, dtype=np.float_)
-    off_center = np.empty(2, dtype=np.float_)
-    new_coord = np.empty((2,), dtype=np.int_)
+    cm_n = np.zeros(2, dtype=np.float_)
+    cm_i = np.zeros(2, dtype=np.float_)
+    off_center = np.zeros(2, dtype=np.float_)
+    new_coord = np.zeros(2, dtype=np.int_)
+
+    # "Declare" registers
+    square0 = 0
+    square1 = 0
+    Rg_ = 0.
+    ecc_ = 0.
+    mass_ = 0.
+    ecc1 = 0.
+    ecc2 = 0.
+    signal_ = 0.
+    allow_moves = True
+    do_move = False
+    center_px = image[0,0]
+    raw_px = raw_image[0,0]
+    px = image[0,0]
+    oc = 0.
 
     for feat in range(N):
         # Define the circular neighborhood of (x, y).
@@ -328,7 +362,7 @@ def _numba_refine(raw_image, image, radius, coords, max_iterations,
                 for dim in range(2):
                     if off_center[dim] > SHIFT_THRESH:
                         do_move = True
-            do_move = True
+            do_move = True # FIXME: Why do we always need to move?
 
             if do_move:
                 # In here, coord is an integer.
@@ -357,7 +391,7 @@ def _numba_refine(raw_image, image, radius, coords, max_iterations,
                 # TODO Implement this for numba.
                 # Remember to zero cm_n somewhere in here.
                 # Here, coord is a float. We are off the grid.
-                # neighborhood = ndimage.shift(neighborhood, -off_center, 
+                # neighborhood = ndimage.shift(neighborhood, -off_center,
                 #                              order=2, mode='constant', cval=0)
                 # new_coord = np.float_(coord) + off_center
                 # Disallow any whole-pixels moves on future iterations.
@@ -403,17 +437,17 @@ def _numba_refine(raw_image, image, radius, coords, max_iterations,
                         signal_ = px
         Rg_ = np.sqrt(Rg_/mass_)
         mass[feat] = mass_
-        if characterize:
-            Rg[feat] = Rg_
-            center_px = image[square0 + radius, square1 + radius]
-            ecc_ = np.sqrt(ecc1**2 + ecc2**2)/(mass_ - center_px + 1e-6)
-            ecc[feat] = ecc_
-            signal[feat] = signal_  # black_level subtracted later
+        #if characterize:
+        Rg[feat] = Rg_
+        center_px = image[square0 + radius, square1 + radius]
+        ecc_ = np.sqrt(ecc1**2 + ecc2**2)/(mass_ - center_px + 1e-6)
+        ecc[feat] = ecc_
+        signal[feat] = signal_  # black_level subtracted later
 
-    if not characterize:
-        result = np.column_stack([final_coords, mass])
-    else:
-        result = np.column_stack([final_coords, mass, Rg, ecc, signal])
+    #if not characterize:
+    #    result = np.column_stack([final_coords, mass])
+    #else:
+    result = np.column_stack([final_coords, mass, Rg, ecc, signal])
     return result
 
 
