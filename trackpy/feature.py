@@ -1,62 +1,15 @@
-# Copyright 2012 Daniel B. Allan
-# dallan@pha.jhu.edu, daniel.b.allan@gmail.com
-# http://pha.jhu.edu/~dallan
-# http://www.danallan.com
-#
-# This program is free software; you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation; either version 3 of the License, or (at
-# your option) any later version.
-#
-# This program is distributed in the hope that it will be useful, but
-# WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
-# General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program; if not, see <http://www.gnu.org/licenses>.
-
-
 from __future__ import division
-#import warnings
 import numpy as np
-#import pandas as pd
-#from scipy import ndimage
-#from scipy import stats
-#from pandas import DataFrame, Series
-#import matplotlib.pyplot as plt  # for walkthrough
-
-def _get_numba_refine_locals():
-    """Establish types of local variables in _numba_refine(), in a way that's safe if there's no numba."""
-    try:
-        from numba import double, int_, bool_
-    except ImportError:
-        return {}
-    else:
-        return dict(SHIFT_THRESH=double, GOOD_ENOUGH_THRESH=double,
-                    square0=int_, square1=int_, square_size=int_, Rg_=double,
-                    ecc_=double, mass_=double, ecc1=double, ecc2=double,
-                    eccsq=double,
-                    signal_=double, allow_moves=bool_, do_move=bool_,
-                    center_px=int_, raw_px=int_, px=int_,
-                    oc=double, result=double[:,:],
-                    final_coords=double[:,:], mass=double[:],
-                    Rg=double[:], ecc=double[:], signal=double[:],
-                    coord=double[:], cm_n=double[:],
-                    cm_i=double[:], off_center=double[:],
-                    new_coord=int_[:], )
+import math
 
 import numba
-import math
 from numba import double, int_, bool_
-numba.config.DEBUG = 1
-numba.config.OPT = 0
-#@try_numba_autojit(locals=_get_numba_refine_locals())
-#@try_numba_autojit
-@numba.jit(double[:,:](int_[:,:], int_[:,:], int_, double[:,:],
-                int_, bool_, int_[:], int_[:,:], int_[:,:],
-                double[:,:], double[:,:], int_),
-           locals=_get_numba_refine_locals())
+# Both the explicit signature below, and the delayed compile,
+# produce the slow import.
+#@numba.jit(double[:,:](int_[:,:], int_[:,:], int_, double[:,:],
+#                int_, bool_, int_[:], int_[:,:], int_[:,:],
+#                double[:,:], double[:,:], int_),)
+@numba.jit
 def _numba_refine(raw_image, image, radius, coords, max_iterations,
                   characterize, shape, mask, r2_mask, cmask, smask, N):
     SHIFT_THRESH = 0.6
@@ -78,22 +31,6 @@ def _numba_refine(raw_image, image, radius, coords, max_iterations,
     cm_i = np.zeros(2, dtype=np.double)
     off_center = np.zeros(2, dtype=np.double)
     new_coord = np.zeros(2, dtype=np.int64)
-
-    # "Declare" registers
-    square0 = 0
-    square1 = 0
-    Rg_ = 0.
-    ecc_ = 0.
-    mass_ = 0.
-    ecc1 = 0.
-    ecc2 = 0.
-    signal_ = 0.
-    allow_moves = True
-    do_move = False
-    center_px = image[0,0]
-    raw_px = raw_image[0,0]
-    px = image[0,0]
-    oc = 0.
 
     for feat in range(N):
         # Define the circular neighborhood of (x, y).
@@ -118,10 +55,6 @@ def _numba_refine(raw_image, image, radius, coords, max_iterations,
         for iteration in range(max_iterations):
             for dim in range(2):
                 off_center[dim] = cm_n[dim] - radius
-            for dim in range(2):
-                if off_center[dim] > GOOD_ENOUGH_THRESH:
-                    break  # Proceed through iteration. # FIXME
-                break  # Stop iterations. # FIXME
 
             # If we're off by more than half a pixel in any direction, move.
             do_move = False
@@ -129,7 +62,6 @@ def _numba_refine(raw_image, image, radius, coords, max_iterations,
                 for dim in range(2):
                     if off_center[dim] > SHIFT_THRESH:
                         do_move = True
-            #do_move = True # FIXME: Why do we always need to move?
 
             if do_move:
                 # In here, coord is an integer.
@@ -210,8 +142,8 @@ def _numba_refine(raw_image, image, radius, coords, max_iterations,
             center_px = image[square0 + radius, square1 + radius]
             eccsq = ecc1**2 + ecc2**2
             ecc_ = math.sqrt(eccsq)/(mass_ - center_px + 1.0e-6)
-        ecc[feat] = ecc_
-        signal[feat] = signal_  # black_level subtracted later
+            ecc[feat] = ecc_
+            signal[feat] = signal_  # black_level subtracted later
 
     if not characterize:
         result = np.column_stack([final_coords, mass])
