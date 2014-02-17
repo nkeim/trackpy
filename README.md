@@ -1,9 +1,7 @@
-trackpy
+trackpy: Deprecated numba branch
 =======
 
-An impure python implementation of Crocker-Grier for single particle tracking.
-
-Differs from the original (Caswell) version mostly in that it requires the [`numba`](http://numba.pydata.org) Python-to-LLVM dynamic compiler to dramatically speed up some key algorithms.
+**NOTE**: The speedups introduced in this branch of `trackpy` have been merged back into the main branch, available at [https://github.com/soft-matter/trackpy](https://github.com/soft-matter/trackpy). That version has many more features, is potentially faster, and does not have the `memory` bugs that are present in this version. I have switched my development work to the group effort there, and am no longer maintaining this branch. In summary: don't use the code here! --- Nathan Keim, 16 February 2014
 
 Installation
 ----
