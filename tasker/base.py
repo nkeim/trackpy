@@ -63,7 +63,7 @@ class DirBase(object):
         'p' is what should be used to find enclosed files (instance of path.path).
         'opts' may be set through the constructor.
 
-    Call to use as a chdir() context manager.
+    Can also be used as a chdir() context manager.
     """
     def __init__(self, loc='.'):
         self.p = path(loc).abspath()
@@ -76,4 +76,8 @@ class DirBase(object):
         return '%s: %s' % (self.__class__.__name__, self.p)
     def __str__(self):
         return str(self.p)
+    def __enter__(self):
+        return self.p.__enter__()
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        return self.p.__exit__(self, exc_type, exc_val, exc_tb)
 
