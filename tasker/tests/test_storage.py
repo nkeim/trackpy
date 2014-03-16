@@ -1,4 +1,4 @@
-from .storage import *
+from tasker.storage import *
 
 import tempfile, shutil
 import unittest

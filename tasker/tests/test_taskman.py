@@ -2,7 +2,7 @@ import os
 import tempfile, unittest
 from path import path
 import pandas
-from . import taskman, storage
+from tasker import taskman, storage
 
 basedir = path.getcwd()
 
@@ -57,9 +57,9 @@ class TestTaskman(unittest.TestCase):
         os.chdir(basedir)
         self.testdir = path(tempfile.mkdtemp())
         #self.testdir = basedir / 'tmptest'
-        if self.testdir.isdir():
-            self.testdir.rmtree()
-        self.testdir.makedirs_p()
+        #if self.testdir.isdir():
+        #    self.testdir.rmtree()
+        #self.testdir.makedirs_p()
         self.task = self.enter_dir(self.testdir)
     def tearDown(self):
         os.chdir(basedir)
@@ -117,5 +117,11 @@ class TestTaskman(unittest.TestCase):
         finally:
             os.chdir(basedir)
             td2.rmtree()
+
+    def test_context(self):
+        """Text chdir context behavior"""
+        assert path('.').abspath().basename() != self.testdir.abspath().basename()
+        with self.task:
+            assert path('.').abspath().basename() == self.testdir.abspath().basename()
 
 
