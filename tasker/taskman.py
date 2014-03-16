@@ -9,14 +9,17 @@ def _listify(arg):
         return arg
     else:
         return [arg,]
+
 def _toFiles(names):
     return [path(n) for n in names]
+
 def _uniq(l):
     """Removes duplicates from a list, preserving order."""
     r = []
     for item in l:
         if item not in r: r.append(item)
     return r
+
 def _nestmap(fcn, data_part):
     """Works like map() but preserves nested structures of dicts, lists, and tuples."""
     if isinstance(data_part, dict):
@@ -25,6 +28,7 @@ def _nestmap(fcn, data_part):
         return [_nestmap(fcn, v) for v in data_part]
     else:
         return fcn(data_part)
+
 class TaskUnit(object):
     def __init__(self, func, ins, outs, taskman):
         """Create a task.
