@@ -1,4 +1,4 @@
-import imp, md5, sys
+import imp, hashlib, sys
 from path import path
 
 def use(directory, taskfile='taskfile.py', **kw):
@@ -15,7 +15,7 @@ def use(directory, taskfile='taskfile.py', **kw):
     """
     tf = which(directory, taskfile=taskfile)
     # Assign a unique module name, to avoid trouble
-    tf_hash = md5.new(str(tf)).hexdigest()[:10]
+    tf_hash = hashlib.sha1(str(tf)).hexdigest()[:10]
     tfmod = imp.load_source('_taskfile_' + tf_hash, tf)
     try:
         return tfmod.use(directory, **kw)
