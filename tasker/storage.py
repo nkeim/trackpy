@@ -16,6 +16,9 @@ class FileBase(object):
             self.filepath = (self.parentdir / self.filename).normpath().abspath()
     def read(self): pass # Uses self.filepath
     def save(self, data): pass # Uses self.filepath
+    def __call__(self):
+        return self.read()
+
 class Pandas(FileBase):
     def read(self):
         try:
@@ -30,6 +33,7 @@ class Pandas(FileBase):
             hdf[os.path.splitext(os.path.basename(self.filepath))[0]] = data
         finally:
             hdf.close()
+
 class JSON(FileBase):
     def read(self):
         return json.load(open(self.filepath, 'r'))
