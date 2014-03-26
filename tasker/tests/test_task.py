@@ -2,24 +2,24 @@ import os
 import tempfile, unittest
 from path import path
 import pandas
-from tasker import taskman, storage
+from tasker import task, storage
 
 basedir = path.getcwd()
 
 def test_uniq():
     testdat = [0, 1, 1, 3, 7, 7, 7, 10, 10]
-    from_uniq = taskman._uniq(testdat)
+    from_uniq = task._uniq(testdat)
     from_sort = sorted(list(set(testdat)))
     if cmp(from_uniq, from_sort) != 0:
         raise AssertionError('%r != %r' % (from_uniq, from_sort))
 
-class TaskerSubclass(taskman.Tasker):
+class TaskerSubclass(task.Tasker):
     # Users will be encouraged to subclass Tasker, so we might as well do it here.
     # Here they could also define reader methods to read and process files in the
     # directory, outside of the pipeline (but perhaps invoking it).
     pass
 
-class TestTaskman(unittest.TestCase):
+class TestTask(unittest.TestCase):
     def enter_dir(self, dirname):
         """Set up a sample pipeline in a directory. 
         Tests depend on sample data defined here."""
@@ -71,10 +71,10 @@ class TestTaskman(unittest.TestCase):
         with self.task.p:
             self.assertEqual(self.task.one._prepare_data(self.task.one.outs_as_given), 
                     'one_str')
-            self.assertEqual(taskman._nestmap(self.task.two._prepare_data, 
+            self.assertEqual(task._nestmap(self.task.two._prepare_data,
                 self.task.one), 'one_str')
             # Returned data structure mirrors that of input
-            self.assertIsInstance(taskman._nestmap(self.task.three._prepare_data, 
+            self.assertIsInstance(task._nestmap(self.task.three._prepare_data,
                 self.task.three.ins_as_given), list)
     def test_2tasks(self):
         """Make sure up-to-date tasks do not rerun"""
