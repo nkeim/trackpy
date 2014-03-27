@@ -2,7 +2,7 @@ import os
 import tempfile, unittest
 from path import path
 import pandas
-from tasker import task, storage
+from tasker import task, storage, progress
 
 basedir = path.getcwd()
 
@@ -28,24 +28,24 @@ class TestTask(unittest.TestCase):
         task.conf = dict(one='one_str', two=2.0, name=task.name) 
         task.one_count = 0
         @task([], storage.JSON('one.json'))
-        def one(ins):
+        def one(tsk, ins):
             """Docstring: One"""
             task.one_count += 1
             assert len(ins) == 0
             return task.conf['one'] # Goes to JSON
         @task(one, [storage.JSON('two.json'), storage.JSON('2b.json')])
-        def two(input):
+        def two(tsk, input):
             self.assertEqual(input, task.conf['one'])
             return task.conf['two'], {'twofloat': task.conf['two'], 
                     'onestr': input, 'name': task.conf['name']}
         @task([one, two], storage.Pandas('three.h5'))
-        def three(ins):
+        def three(tsk, ins):
             assert ins[0] == task.conf['one']
             twofloat = ins[1][1]['twofloat']
             assert twofloat == task.conf['two']
             return pandas.Series([twofloat,])
         @task({'three': three, 'td': 'three_dummy'}, 'four')
-        def four(ins):
+        def four(tsk, ins):
             assert ins['three'][0] == task.conf['two'] # First row of Series
             self.assertEqual(ins['td'].basename(), 'three_dummy')
             assert len(ins['td'].split()[0])
@@ -123,5 +123,44 @@ class TestTask(unittest.TestCase):
         assert path('.').abspath().basename() != self.testdir.abspath().basename()
         with self.task:
             assert path('.').abspath().basename() == self.testdir.abspath().basename()
+
+    def test_progress(self):
+        @self.task([], ['progress.tag'])
+        def exercise_progress(tsk, ins):
+            mon = progress.Monitor([self.task.p])
+            def readprog():
+                assert (self.task.p / 'taskerstatus.json').exists()
+                stat = mon.get_statuses()
+                return stat.ix[0].to_dict()
+            assert readprog()['status'] == 'starting'
+            assert 'elapsed_time' in readprog()
+            for i in tsk.progress.tally(range(10)):
+                assert type(i) is int
+                stat = readprog()
+                assert stat['status'] == 'working'
+                assert stat['current'] == i + 1
+                assert 'time_per' in stat
+            for i in tsk.progress.tally(range(10), 10):
+                assert type(i) is int
+                stat = readprog()
+                assert stat['total'] == 10
+                assert stat['current'] == i + 1
+                assert 'time_per' in stat
+            for i in range(10):
+                tsk.progress.working(i)
+                stat = readprog()
+                assert stat['status'] == 'working'
+                assert stat['current'] == i + 1
+                assert 'time_per' not in stat
+            for i in range(10):
+                tsk.progress.working(i, 10)
+                stat = readprog()
+                assert stat['current'] == i + 1
+            for i in range(10):
+                tsk.progress.working(i, 10, {'hi': 1.5})
+                stat = readprog()
+                assert stat['current'] == i + 1
+                assert stat['hi'] == 1.5
+        self.task.exercise_progress()
 
 

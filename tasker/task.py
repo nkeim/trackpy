@@ -3,6 +3,7 @@ from path import path
 
 from .base import isUpToDate, DirBase
 from .storage import FileBase
+from .progress import Progress
 
 def _listify(arg):
     if isinstance(arg, (list, tuple)):
@@ -39,10 +40,12 @@ class TaskUnit(object):
         'taskman' is a parent Tasker instance, which presently serves to 
             set the working directory for this task.
 
-        When 'func' is called, it takes a single argument which is structured
-        like 'ins', but with FileBase instances replaced with those files' contents,
-        and with each TaskUnit instance replaced with a list (or single value)
-        corresponding to that TaskUnit's outputs.
+        When 'func' is called, it takes two arguments:
+            - The first is its own TaskUnit instance.
+            - The second is structured like 'ins', but with FileBase instances
+            replaced with those files' contents, and with each TaskUnit instance
+            replaced with a list (or single value) corresponding to that
+            TaskUnit's outputs.
 
         'func' returns a list (or single value) which corresponds to the elements of 
         'outs'. Elements not corresponding to a FileBase instance are ignored; the
@@ -54,6 +57,11 @@ class TaskUnit(object):
 
         When a user asks for the outputs of 'func', they are loaded from disk and 
         returned as a dict, which is indexed just like in the argument to 'func'.
+
+        Tips for writing func(tsk, ins):
+            'tsk.progress' is a statusboard.Progress instance that makes
+                it easy for your task to report its status. Its start()
+                and finish() methods will be called automatically.
         """
         self.func = func
         self.__name__ = func.__name__
@@ -139,15 +147,29 @@ class TaskUnit(object):
         return _nestmap(self._prepare_data, self.outs_as_given)
     def run(self):
         """Execute task (always) and write output files in recognized formats.
-        
-        Temporarily changes to task's working directory."""
+
+        Temporarily changes to task's working directory.
+
+        Status information is written to "taskerstatus.json" in this
+        directory.
+        """
         _old_dir = os.getcwd()
         try:
             os.chdir(self.p)
-            outdata = _listify(self.func(_nestmap(self._prepare_data, self.ins_as_given)))
-            assert len(outdata) == len(self.outs)
-            for of, od in zip(self.outs, outdata):
-                if isinstance(of, FileBase): of.save(od)
+            self.progress = Progress(persistent_info={
+                'task': self.__name__, 'pid': os.getpid(), })
+            self.progress.start()
+            try:
+                outdata = _listify(self.func(self,
+                            _nestmap(self._prepare_data, self.ins_as_given)))
+                assert len(outdata) == len(self.outs)
+                for of, od in zip(self.outs, outdata):
+                    if isinstance(of, FileBase): of.save(od)
+            except:
+                self.progress.update({'status': 'ERROR'})
+                raise
+            else:
+                self.progress.finish()
         finally:
             os.chdir(_old_dir)
     def sync(self):
@@ -171,6 +193,7 @@ class TaskUnit(object):
         for f in self.output_files:
             if f.isdir(): f.rmtree()
             elif f.isfile(): f.unlink()
+
 class Tasker(DirBase):
     """Object to set up tasks within a single directory.
     
