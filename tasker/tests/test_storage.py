@@ -43,5 +43,18 @@ class parentdir(unittest.TestCase):
             pobj.save(data)
             pobj.read()
             assert (testdir / 'test.json').exists()
+
+            # Check auto subdirectory creation (FileBase._mkdir())
+            pobj = JSON('subdir/test.json')
+            pobj.set_parentdir(testdir)
+            pobj.save(data)
+            pobj.read()
+            assert (testdir / 'subdir' / 'test.json').exists()
+
+            pobj = Pandas('subdir/test.h5')
+            pobj.set_parentdir(testdir)
+            pobj.save(pandas.DataFrame([data,]))
+            pobj.read()
+            assert (testdir / 'subdir' / 'test.h5').exists()
         finally:
             shutil.rmtree(testdir)

@@ -6,7 +6,7 @@ from path import path
 class FileBase(object):
     def __init__(self, filename, parentdir='.'):
         """Specify location of file. If 'filename' is absolute, 'parentdir' is ignored."""
-        self.filename = path(filename)
+        self.filename = path(filename).normpath()
         self.set_parentdir(parentdir)
     def set_parentdir(self, parentdir):
         self.parentdir = path(parentdir)
@@ -16,6 +16,11 @@ class FileBase(object):
             self.filepath = (self.parentdir / self.filename).normpath().abspath()
     def read(self): pass # Uses self.filepath
     def save(self, data): pass # Uses self.filepath
+    def _mkdir(self):
+        """Makes directory that self.filepath goes in, if it does
+        not exist.
+        """
+        self.filepath.dirname().makedirs_p()
     def __call__(self):
         return self.read()
 
@@ -28,6 +33,7 @@ class Pandas(FileBase):
             hdf.close()
         return r
     def save(self, data):
+        self._mkdir()
         try:
             hdf = pandas.HDFStore(self.filepath, 'w')
             hdf[os.path.splitext(os.path.basename(self.filepath))[0]] = data
@@ -38,4 +44,5 @@ class JSON(FileBase):
     def read(self):
         return json.load(open(self.filepath, 'r'))
     def save(self, data):
+        self._mkdir()
         json.dump(data, open(self.filepath, 'w'), indent=4, separators=(',', ': '))
