@@ -13,15 +13,23 @@ def use(directory, taskfile='taskfile.py', **kw):
     The use() that is found is called with 'directory' and any additional keyword 
     arguments.
     """
-    tf = which(directory, taskfile=taskfile)
-    # Assign a unique module name, to avoid trouble
-    tf_hash = hashlib.sha1(str(tf)).hexdigest()[:10]
-    tfmod = imp.load_source('_taskfile_' + tf_hash, tf)
+    tfmod = taskmod(directory, taskfile=taskfile)
     try:
         return tfmod.use(directory, **kw)
     except:
-        sys.stderr.write('Problem calling use() in %s\n' % tf)
+        sys.stderr.write('Problem calling use() for %s\n' % directory)
         raise
+
+def taskmod(directory, taskfile='taskfile.py'):
+    """Import the module that defines tasks (and anything else) for 'directory'.
+
+    Searches upward from 'directory' to find the relevant 'taskfile'. 'taskfile'
+    can be a glob pattern or an absolute path, in which case no search is performed.
+    """
+    tf = which(directory, taskfile=taskfile)
+    # Assign a unique module name, to avoid trouble
+    tf_hash = hashlib.sha1(str(tf)).hexdigest()[:10]
+    return imp.load_source('_taskfile_' + tf_hash, tf)
 
 def which(directory, taskfile='taskfile.py'):
     """Returns path to the Python file defining tasker tasks for 'directory'.
