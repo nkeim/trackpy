@@ -33,10 +33,10 @@ class Monitor(object):
         Returns a DataFrame, which should display nicely.
         """
         df = self.get_statuses()
-        columns = ['dir', 'task', 'since_update', 'status',]
+        columns = ['dir', 'task', 'since_update', 'status',
+                   'elapsed_time']
         if custom_columns is None:
-            columns.extend([ 'current', 'total'
-                        'elapsed_time', 'time_left',])
+            columns.extend([ 'current', 'total', 'time_left',])
         else:
             columns.extend(custom_columns)
         for cn in columns:
@@ -167,18 +167,6 @@ class Progress(StatusFile):
         newinfo.update({'started': self.stopwatch.started,
                         'elapsed_time': _format_td(self.stopwatch.elapsed())})
         super(Progress, self).update(newinfo)
-
-    def start(self, info=None):
-        """Signal beginning phase of task.
-
-        newinfo : optional dict of extra information.
-
-        (This is called automatically by Task.)
-        """
-        tmpinfo = {'status': 'starting'}
-        if info is not None:
-            tmpinfo.update(info)
-        self.update(tmpinfo)
 
     def working(self, current=None, total=None, info=None):
         """Report progress on a task.
