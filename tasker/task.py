@@ -158,7 +158,7 @@ class TaskUnit(object):
             os.chdir(self.p)
             self.progress = Progress(persistent_info={
                 'task': self.__name__, 'pid': os.getpid(), })
-            self.progress.start()
+            self.progress.working()
             try:
                 outdata = _listify(self.func(self,
                             _nestmap(self._prepare_data, self.ins_as_given)))

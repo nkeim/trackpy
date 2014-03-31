@@ -132,7 +132,7 @@ class TestTask(unittest.TestCase):
                 assert (self.task.p / 'taskerstatus.json').exists()
                 stat = mon.get_statuses()
                 return stat.ix[0].to_dict()
-            assert readprog()['status'] == 'starting'
+            assert readprog()['status'] == 'working'
             assert 'elapsed_time' in readprog()
             for i in tsk.progress.tally(range(10)):
                 assert type(i) is int
