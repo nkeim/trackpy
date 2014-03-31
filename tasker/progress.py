@@ -1,6 +1,7 @@
 """Support functions for communicating worker status."""
 
 import os, json, time, datetime
+import signal
 import numpy as np
 import pandas
 
@@ -21,7 +22,7 @@ class Monitor(object):
                 sfinfo['since_update'] = _format_td(datetime.timedelta(0,
                     time.time() - os.path.getmtime(sfn)))
             except IOError:
-                sfinfo = {'working_dir': str(d), 'status': '?'}
+                sfinfo = {'dir': str(d), 'status': '?'}
             info.append(sfinfo)
         return pandas.DataFrame(info)
     def show(self, custom_columns=None):
@@ -62,6 +63,22 @@ class Monitor(object):
             IPython.display.display_html(sb.to_html(na_rep=''), raw=True)
             print 'Last update: ' + datetime.datetime.now().strftime('%c')
             return
+    def abort(self, indices=None):
+        """Interrupts tasks running LOCALLY on this computer.
+
+        indices : Optional sequence of indices to the DataFrame displayed by show()
+        """
+        if indices is not None:
+            pids = self.get_statuses().ix[list(indices)].pid
+        else:
+            pids = self.get_statuses().pid
+        for pid in pids:
+            try:
+                pid = int(pid)
+            except ValueError:
+                pass
+            else:
+                os.kill(pid, signal.SIGINT)
 
 class StatusFile(object):
     """JSON-formatted file for status of a long-running computation"""
@@ -125,7 +142,7 @@ class Stopwatch(object):
                                          / laps * (total_laps - laps))
 
 def _format_td(timedelt):
-    """Format a timedelta object as NNhNNmNNs"""
+    """Format a timedelta object as hh:mm:ss"""
     if timedelt is None:
         return ''
     s = int(round(timedelt.total_seconds()))
@@ -139,6 +156,8 @@ class Progress(StatusFile):
                  filename='taskerstatus.json'):
         """persistent_info : dict of information to always report
         """
+        persistent_info = persistent_info.copy()
+        persistent_info['pid'] = os.getpid()
         super(Progress, self).__init__(persistent_info, filename)
         self.total_parts = None
         self.stopwatch = Stopwatch()
