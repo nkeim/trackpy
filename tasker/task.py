@@ -103,16 +103,21 @@ class TaskUnit(object):
         deps = self._flatten_dependencies_recurse(self.ins)
         files, tasks = set(), set()
         for v in deps:
-            if isinstance(v, TaskUnit): tasks.add(v)
+            if isinstance(v, TaskUnit):
+                tasks.add(v)
+            else:
+                files.add(v)
         # File paths should be relative to my working dir.
         return [f if f.isabs() else (self.p / f).abspath() \
-                for f in _toFiles(list(files))], \
+                for f in _toFiles(files)], \
                 list(tasks)
     def _flatten_dependencies_recurse(self, in_part):
-        """Walks the 'self.ins' data structure in a manner similar to _prepare_inputs()"""
+        """Walks the 'self.ins' data structure, collecting objects."""
         flatten = lambda seq: reduce((lambda a,b: a+b), seq, [])
-        if isinstance(in_part, (str, FileBase, TaskUnit)):
+        if isinstance(in_part, (str, FileBase)):
             return [in_part,]
+        elif isinstance(in_part, TaskUnit):
+            return [in_part,] + list(in_part.output_files)
         elif isinstance(in_part, dict):
             return flatten([self._flatten_dependencies_recurse(v) \
                     for v in in_part.values()])
