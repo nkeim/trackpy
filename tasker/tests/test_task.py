@@ -163,4 +163,14 @@ class TestTask(unittest.TestCase):
                 assert stat['hi'] == 1.5
         self.task.exercise_progress()
 
+    def test_locking(self):
+        didrun = []
+        @self.task([], [])
+        def try_locking(tsk, ins):
+            didrun.append(True)
+            assert self.task.is_working()
+        assert not self.task.is_working()
+        self.task.try_locking()
+        assert didrun
+        assert not self.task.is_working()
 

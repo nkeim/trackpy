@@ -5,9 +5,11 @@ import signal
 import numpy as np
 import pandas
 
+DEFAULT_STATUS_FILE = 'taskerstatus.json'
+
 class Monitor(object):
     """Monitor workers in many directories."""
-    def __init__(self, dirs, filename='taskerstatus.json'):
+    def __init__(self, dirs, filename=DEFAULT_STATUS_FILE):
         self.dirs = dirs
         self.filename = filename
     def get_statuses(self):
@@ -82,7 +84,7 @@ class Monitor(object):
 
 class StatusFile(object):
     """JSON-formatted file for status of a long-running computation"""
-    def __init__(self, persistent_info=None, filename='taskerstatus.json'):
+    def __init__(self, persistent_info=None, filename=DEFAULT_STATUS_FILE):
         """'persistent_info' is a dict that will be included
         in every update.
         """
@@ -91,6 +93,7 @@ class StatusFile(object):
             self.persistent_info = {}
         else:
             self.persistent_info = persistent_info.copy()
+        self.persistent_info['pid'] = os.getpid()
     def update(self, newinfo):
         """Write status file with 'newinfo', including persistent information."""
         tmpname = self.filename + '._tmp'
@@ -153,17 +156,23 @@ def _format_td(timedelt):
 
 class Progress(StatusFile):
     def __init__(self, persistent_info=None,
-                 filename='taskerstatus.json'):
+                 filename=DEFAULT_STATUS_FILE):
         """persistent_info : dict of information to always report
         """
-        persistent_info = persistent_info.copy()
-        persistent_info['pid'] = os.getpid()
-        super(Progress, self).__init__(persistent_info, filename)
+        super(Progress, self).__init__(persistent_info=persistent_info,
+                                       filename=filename)
         self.total_parts = None
         self.stopwatch = Stopwatch()
         self.total = None # total units of work, if we ever find out
 
     def update(self, newinfo):
+        """Report arbitrary status information.
+
+        This should be used only if you know what you are doing. Specifically,
+        setting a "status" value other than "working" will interfere with
+        tasker's locking mechanism, which keeps multiple taskers from
+        working in the same directory.
+        """
         newinfo.update({'started': self.stopwatch.started,
                         'elapsed_time': _format_td(self.stopwatch.elapsed())})
         super(Progress, self).update(newinfo)

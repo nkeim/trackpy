@@ -1,9 +1,16 @@
-import os
+import exceptions, os
+import json
+
 from path import path
 
 from .base import isUpToDate, DirBase
 from .storage import FileBase
-from .progress import Progress
+from .progress import Progress, DEFAULT_STATUS_FILE
+
+
+class LockException(exceptions.IOError):
+    pass
+
 
 def _listify(arg):
     if isinstance(arg, (list, tuple)):
@@ -74,6 +81,7 @@ class TaskUnit(object):
         self.ins_as_given = ins
         self.ins = _listify(ins)
         self.input_files, self.input_tasks = self._flatten_dependencies()
+
     # Deal with arbitrary user specification of task inputs
     def _get_filename(self, fileobj):
         """Returns absolute path to a file, from a string or FileBase."""
@@ -125,6 +133,7 @@ class TaskUnit(object):
         return 'TaskUnit: ' + self.func.__name__
     def __hash__(self):
         return id(self) # So we can put these in sets
+
     # Public interface
     def __call__(self):
         """Update outputs if necessary and read from disk. 
@@ -151,31 +160,39 @@ class TaskUnit(object):
         Temporarily changes to task's working directory.
 
         Status information is written to "taskerstatus.json" in this
-        directory.
+        directory. If this file already indicates a "working" status,
+        raises a LockException.
         """
+        if self.taskman.is_working():
+            raise LockException('%s says another task is running there.' % \
+                                (self.taskman.p / DEFAULT_STATUS_FILE))
         _old_dir = os.getcwd()
         try:
             os.chdir(self.p)
             self.progress = Progress(persistent_info={
                 'task': self.__name__, 'pid': os.getpid(), })
-            self.progress.working()
+            self.progress.working() # Establish lock
             try:
                 outdata = _listify(self.func(self,
                             _nestmap(self._prepare_data, self.ins_as_given)))
-                assert len(outdata) == len(self.outs)
-                for of, od in zip(self.outs, outdata):
-                    if isinstance(of, FileBase): of.save(od)
+                if len(self.outs):
+                    assert len(outdata) == len(self.outs)
+                    for of, od in zip(self.outs, outdata):
+                        if isinstance(of, FileBase): of.save(od)
             except:
-                self.progress.update({'status': 'ERROR'})
+                self.progress.update({'status': 'ERROR'}) # Release lock
                 raise
             else:
-                self.progress.finish()
+                self.progress.finish() # Release lock
         finally:
             os.chdir(_old_dir)
     def sync(self):
         """run() task if required to keep outputs up to date."""
         for it in self.input_tasks: it.sync() # Really, really inefficient
-        if not isUpToDate(self.output_files, self.input_files): self.run()
+        if not isUpToDate(self.output_files, self.input_files):
+            self.run()
+        elif len(self.outs) == 0 and len(self.ins) == 0:
+            self.run() # No inputs or outputs -> always runs
     def isUpToDate(self):
         """True if this task and all its dependencies are current."""
         return isUpToDate(self.output_files, self.input_files) and \
@@ -203,7 +220,7 @@ class Tasker(DirBase):
         self.tasks = {}
         self.conf = {}
     def __call__(self, ins, outs):
-        """Returns a decorator that turns the function into a task 
+        """Return a decorator that turns the function into a task
         with registered inputs and outputs."""
         # If FileBase instances in 'ins' and 'outs' do not refer to absolute paths,
         # they need to be made relative to our working dir.
@@ -228,7 +245,14 @@ class Tasker(DirBase):
             if fnp_abs in t.output_files:
                 return t
     def clear(self):
-        """Removes all output files of all tasks."""
+        """Remove all output files of all tasks."""
         for t in self.tasks.values():
             t.clear()
-
+    def is_working(self):
+        """Check "taskerstatus.json" to see if any task is running."""
+        try:
+            sf = open(self.p / DEFAULT_STATUS_FILE, 'r')
+            sfinfo = json.load(sf)
+            return sfinfo['status'] == 'working'
+        except (IOError, ValueError, KeyError):
+            return False
