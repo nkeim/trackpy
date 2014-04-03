@@ -25,10 +25,23 @@ class FileBase(object):
         return self.read()
 
 class Pandas(FileBase):
+    def __init__(self, filename, parentdir='.', key=None):
+        """Specify location of file. 
+        
+        If 'filename' is absolute, 'parentdir' is ignored.
+
+        'key' gives the name of the Pandas object within the file.
+            Defaults to the filename (minus extension).
+        """
+        super(Pandas, self).__init__(filename, parentdir=parentdir)
+        if key is None:
+            self.key = os.path.splitext(os.path.basename(self.filepath))[0]
+        else:
+            self.key = key
     def read(self):
         try:
             hdf = pandas.HDFStore(self.filepath, 'r')
-            r = hdf[os.path.splitext(os.path.basename(self.filepath))[0]]
+            r = hdf[self.key]
         finally:
             hdf.close()
         return r
@@ -36,7 +49,7 @@ class Pandas(FileBase):
         self._mkdir()
         try:
             hdf = pandas.HDFStore(self.filepath, 'w')
-            hdf[os.path.splitext(os.path.basename(self.filepath))[0]] = data
+            hdf[self.key] = data
         finally:
             hdf.close()
 

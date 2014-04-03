@@ -20,13 +20,16 @@ class Monitor(object):
                 sfn = os.path.join(d, self.filename)
                 sf = open(sfn, 'r')
                 sfinfo = json.load(sf)
-                sfinfo['dir'] = str(d)
+                sfinfo['dir'] = os.path.basename(d)
+                sfinfo['absdir'] = os.path.abspath(d)
                 sfinfo['since_update'] = _format_td(datetime.timedelta(0,
                     time.time() - os.path.getmtime(sfn)))
             except IOError:
-                sfinfo = {'dir': str(d), 'status': '?'}
+                sfinfo = {'dir': os.path.basename(d), 
+                        'absdir': os.path.abspath(d),
+                        'status': '?'}
             info.append(sfinfo)
-        return pandas.DataFrame(info)
+        return pandas.DataFrame(info).astype(object).fillna('') # Blanks, not NaNs
     def show(self, custom_columns=None):
         """Presents formatted status info.
 
@@ -38,7 +41,7 @@ class Monitor(object):
         columns = ['dir', 'task', 'since_update', 'status',
                    'elapsed_time']
         if custom_columns is None:
-            columns.extend([ 'current', 'total', 'time_left',])
+            columns.extend(['current', 'total', 'time_per', 'time_left',])
         else:
             columns.extend(custom_columns)
         for cn in columns:
@@ -65,22 +68,23 @@ class Monitor(object):
             IPython.display.display_html(sb.to_html(na_rep=''), raw=True)
             print 'Last update: ' + datetime.datetime.now().strftime('%c')
             return
-    def abort(self, indices=None):
-        """Interrupts tasks running LOCALLY on this computer.
-
-        indices : Optional sequence of indices to the DataFrame displayed by show()
-        """
-        if indices is not None:
-            pids = self.get_statuses().ix[list(indices)].pid
-        else:
-            pids = self.get_statuses().pid
-        for pid in pids:
-            try:
-                pid = int(pid)
-            except ValueError:
-                pass
-            else:
-                os.kill(pid, signal.SIGINT)
+    # FIXME: Need to check that process name is python (b/c file PID may be out of date)
+    #def abort(self, indices=None):
+    #    """Interrupts tasks running LOCALLY on this computer.
+    #
+    #    indices : Optional sequence of indices to the DataFrame displayed by show()
+    #    """
+    #    if indices is not None:
+    #        pids = self.get_statuses().ix[list(indices)].pid
+    #    else:
+    #        pids = self.get_statuses().pid
+    #    for pid in pids:
+    #        try:
+    #            pid = int(pid)
+    #        except ValueError:
+    #            pass
+    #        else:
+    #            os.kill(pid, signal.SIGINT)
 
 class StatusFile(object):
     """JSON-formatted file for status of a long-running computation"""
