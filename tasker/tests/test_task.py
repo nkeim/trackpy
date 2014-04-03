@@ -169,6 +169,7 @@ class TestTask(unittest.TestCase):
         def try_locking(tsk, ins):
             didrun.append(True)
             assert self.task.is_working()
+            self.assertRaises(task.LockException, try_locking)
         assert not self.task.is_working()
         self.task.try_locking()
         assert didrun
