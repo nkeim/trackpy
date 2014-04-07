@@ -64,6 +64,8 @@ class TestTask(unittest.TestCase):
     def tearDown(self):
         os.chdir(basedir)
         self.testdir.rmtree()
+    def test_name(self):
+        assert self.task.one.__name__ == 'one'
     def test_prepare_data(self):
         # Make sure we know what to do with TaskUnit and FileBase instances
         self.task.three()
