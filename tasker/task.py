@@ -178,8 +178,8 @@ class TaskUnit(object):
                 'task': self.__name__, 'pid': os.getpid(), })
             self.progress.working() # Establish lock
             try:
-                outdata = _listify(self.func(self,
-                            _nestmap(self._prepare_data, self.ins_as_given)))
+                ins = _nestmap(self._prepare_data, self.ins_as_given)
+                outdata = _listify(self.func(self, ins))
                 if len(self.outs):
                     assert len(outdata) == len(self.outs)
                     for of, od in zip(self.outs, outdata):
