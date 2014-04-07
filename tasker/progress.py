@@ -69,6 +69,7 @@ class Monitor(object):
             print 'Last update: ' + datetime.datetime.now().strftime('%c')
             return
     # FIXME: Need to check that process name is python (b/c file PID may be out of date)
+    # It may suffice to check whether status is "working"
     #def abort(self, indices=None):
     #    """Interrupts tasks running LOCALLY on this computer.
     #
