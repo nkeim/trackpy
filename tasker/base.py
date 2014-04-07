@@ -1,3 +1,4 @@
+import os
 from path import path
 
 def _listify(arg):
@@ -67,6 +68,7 @@ class DirBase(object):
     """
     def __init__(self, loc='.'):
         self.p = path(loc).abspath()
+        self._chdir_stack = []
     name = property(lambda self: self.p.basename(),
             doc='Name of this directory')
     parentname = property(lambda self: (self.p / '..').basename(),
@@ -77,7 +79,8 @@ class DirBase(object):
     def __str__(self):
         return str(self.p)
     def __enter__(self):
-        return self.p.__enter__()
+        self._chdir_stack.append(os.getcwd())
+        os.chdir(self.p)
     def __exit__(self, exc_type, exc_val, exc_tb):
-        return self.p.__exit__(self, exc_type, exc_val, exc_tb)
+        os.chdir(self._chdir_stack.pop(-1))
 

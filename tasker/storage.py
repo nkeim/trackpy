@@ -39,16 +39,16 @@ class Pandas(FileBase):
         else:
             self.key = key
     def read(self):
+        hdf = pandas.HDFStore(self.filepath, 'r')
         try:
-            hdf = pandas.HDFStore(self.filepath, 'r')
             r = hdf[self.key]
         finally:
             hdf.close()
         return r
     def save(self, data):
         self._mkdir()
+        hdf = pandas.HDFStore(self.filepath, 'w')
         try:
-            hdf = pandas.HDFStore(self.filepath, 'w')
             hdf[self.key] = data
         finally:
             hdf.close()
