@@ -1,4 +1,5 @@
 import exceptions, os
+import contextlib
 import json
 
 from path import path
@@ -170,14 +171,10 @@ class TaskUnit(object):
         # We return a dict in which the values are referred to by various names,
         # the wame way we pass input data to self.func() itself.
         return _nestmap(self._prepare_data, self.outs_as_given)
-    def run(self):
-        """Execute task (always) and write output files in recognized formats.
-
-        Temporarily changes to task's working directory.
-
-        Status information is written to "taskerstatus.json" in this
-        directory. If this file already indicates a "working" status,
-        raises a LockException.
+    @contextlib.contextmanager
+    def _run_context(self):
+        """Handles locking, inputs, and progress before and after
+        running a task. Yields the task's inputs.
         """
         lockfile = self.taskman._lockfile(self.__name__)
         if self._running:
@@ -198,11 +195,7 @@ class TaskUnit(object):
             self.progress.working()
             try:
                 ins = _nestmap(self._prepare_data, self.ins_as_given)
-                outdata = _listify(self.func(self, ins))
-                if len(self.outs):
-                    assert len(outdata) == len(self.outs)
-                    for of, od in zip(self.outs, outdata):
-                        if isinstance(of, FileBase): of.save(od)
+                yield ins # Run the task function
             except:
                 self.progress.update({'status': 'ERROR'})
                 raise
@@ -212,8 +205,25 @@ class TaskUnit(object):
             self._running = False
             if lockfile.exists(): lockfile.unlink()
             os.chdir(_old_dir)
+    def run(self):
+        """Execute task (always) and write output files in recognized formats.
+
+        Does not update dependencies.
+
+        Temporarily changes to task's working directory.
+
+        Status information is written to "taskerstatus.json" in this
+        directory. If this file already indicates a "working" status,
+        raises a LockException.
+        """
+        with self._run_context() as ins:
+            outdata = _listify(self.func(self, ins))
+            if len(self.outs):
+                assert len(outdata) == len(self.outs)
+                for of, od in zip(self.outs, outdata):
+                    if isinstance(of, FileBase): of.save(od)
     def sync(self):
-        """run() task if required to keep outputs up to date."""
+        """Update dependencies and run() task if required."""
         if self._syncing:
             raise LockException('Cyclic dependency: "%s" somehow depends on '
                 'itself.' % self.__name__)
@@ -226,10 +236,10 @@ class TaskUnit(object):
                 self.run() # No inputs or outputs -> always runs
         finally:
             self._syncing = False
-    def isUpToDate(self):
+    def is_current(self):
         """True if this task and all its dependencies are current."""
         return isUpToDate(self.output_files, self.input_files) and \
-                all([it.isUpToDate() for it in self.input_tasks])
+                all([it.is_current() for it in self.input_tasks])
     def report(self):
         """List tasks that would have to be run to update outputs."""
         return _uniq(self._report_recurse())
@@ -243,6 +253,45 @@ class TaskUnit(object):
         for f in self.output_files:
             if f.isdir(): f.rmtree()
             elif f.isfile(): f.unlink()
+
+
+class TaskUnitNoStore(TaskUnit):
+    """For task functions that don't store results to disk.
+    """
+
+    def __init__(self, func, ins, taskman):
+        super(TaskUnitNoStore, self).__init__(func, ins, [], taskman)
+
+    def run(self):
+        """Execute task (always) without updating dependencies.
+
+        Temporarily changes to task's working directory.
+
+        Status information is written to "taskerstatus.json" in this
+        directory. If this file already indicates a "working" status,
+        raises a LockException.
+        """
+        with self._run_context() as ins:
+            return self.func(self, **ins)
+
+    load = run
+
+    def __call__(self):
+        return self.load()
+
+    def sync(self):
+        """Make sure all dependencies are up to date."""
+        if self._syncing:
+            raise LockException('Cyclic dependency: "%s" somehow depends on '
+                                'itself.' % self.__name__)
+        try:
+            self._syncing = True
+            for it in self.input_tasks: it.sync() # Really, really inefficient
+        finally:
+            self._syncing = False
+
+
+
 
 class Tasker(DirBase):
     """Object to set up tasks within a single directory.
