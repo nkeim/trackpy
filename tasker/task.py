@@ -191,6 +191,11 @@ class TaskUnit(object):
                 self.progress.finish() # Release lock
         finally:
             os.chdir(_old_dir)
+    def force(self):
+        """Re-run task and return outputs."""
+        for it in self.input_tasks: it.sync()
+        self.run()
+        return self.load()
     def sync(self):
         """run() task if required to keep outputs up to date."""
         for it in self.input_tasks: it.sync() # Really, really inefficient
@@ -261,3 +266,8 @@ class Tasker(DirBase):
             return sfinfo['status'] == 'working'
         except (IOError, ValueError, KeyError):
             return False
+    def unlock(self):
+        """Remove "taskerstatus.json" to release working lock."""
+        sfn = self.p / DEFAULT_STATUS_FILE
+        if sfn.exists():
+            sfn.unlink()
