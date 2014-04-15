@@ -27,8 +27,9 @@ def taskmod(directory, taskfile='taskfile.py'):
     can be a glob pattern or an absolute path, in which case no search is performed.
     """
     tf = which(directory, taskfile=taskfile)
+    dirpath = path(directory).abspath()
     # Assign a unique module name, to avoid trouble
-    tf_hash = hashlib.sha1(str(tf) + str(directory)).hexdigest()[:10]
+    tf_hash = hashlib.sha1(str(tf) + str(dirpath)).hexdigest()[:10]
     return imp.load_source('_taskfile_' + tf_hash, tf)
 
 def which(directory, taskfile='taskfile.py'):
