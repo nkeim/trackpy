@@ -82,6 +82,9 @@ class TaskUnit(object):
         self.ins = _listify(ins)
         self.input_files, self.input_tasks = self._flatten_dependencies()
 
+        self._running = False # Prevent recursion
+        self._syncing = False # Prevent recursion
+
     # Deal with arbitrary user specification of task inputs
     def _get_filename(self, fileobj):
         """Returns absolute path to a file, from a string or FileBase."""
@@ -168,11 +171,16 @@ class TaskUnit(object):
         directory. If this file already indicates a "working" status,
         raises a LockException.
         """
-        if self.taskman.is_working():
-            raise LockException('%s says another task is running there.' % \
-                                (self.taskman.p / DEFAULT_STATUS_FILE))
+        if self._running:
+            raise LockException('Attempting to run task "%s" in "%s" when '
+                                'already in progress.' % \
+                                (self.__name__, self.taskman.p))
+        if self.taskman.is_working(task=self.__name__): # Suspenders and a belt
+            raise LockException('%s says task "%s" is already running there.' % \
+                                (self.taskman.p / DEFAULT_STATUS_FILE, self.__name__))
         _old_dir = os.getcwd()
         try:
+            self._running = True
             os.chdir(self.p)
             self.progress = Progress(persistent_info={
                 'task': self.__name__, 'pid': os.getpid(), })
@@ -190,14 +198,22 @@ class TaskUnit(object):
             else:
                 self.progress.finish() # Release lock
         finally:
+            self._running = False
             os.chdir(_old_dir)
     def sync(self):
         """run() task if required to keep outputs up to date."""
-        for it in self.input_tasks: it.sync() # Really, really inefficient
-        if not isUpToDate(self.output_files, self.input_files):
-            self.run()
-        elif len(self.outs) == 0 and len(self.ins) == 0:
-            self.run() # No inputs or outputs -> always runs
+        if self._syncing:
+            raise LockException('Cyclic dependency: "%s" somehow depends on '
+                'itself.' % self.__name__)
+        try:
+            self._syncing = True
+            for it in self.input_tasks: it.sync() # Really, really inefficient
+            if not isUpToDate(self.output_files, self.input_files):
+                self.run()
+            elif len(self.outs) == 0 and len(self.ins) == 0:
+                self.run() # No inputs or outputs -> always runs
+        finally:
+            self._syncing = False
     def isUpToDate(self):
         """True if this task and all its dependencies are current."""
         return isUpToDate(self.output_files, self.input_files) and \
@@ -253,11 +269,18 @@ class Tasker(DirBase):
         """Remove all output files of all tasks."""
         for t in self.tasks.values():
             t.clear()
-    def is_working(self):
-        """Check "taskerstatus.json" to see if any task is running."""
+    def is_working(self, task=None):
+        """Check "taskerstatus.json" to see if any task is running.
+
+        task : Check whether task with this name is running (optional).
+        """
         try:
             sf = open(self.p / DEFAULT_STATUS_FILE, 'r')
             sfinfo = json.load(sf)
-            return sfinfo['status'] == 'working'
+            if sfinfo['status'] == 'working':
+                if task is not None:
+                    return sfinfo['task'] == task
+                else:
+                    return True
         except (IOError, ValueError, KeyError):
             return False

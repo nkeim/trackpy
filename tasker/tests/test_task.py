@@ -171,9 +171,15 @@ class TestTask(unittest.TestCase):
         def try_locking(tsk, ins):
             didrun.append(True)
             assert self.task.is_working()
+            assert self.task.is_working(task='try_locking')
+            assert not self.task.is_working(task='something_else')
+            self.task.one.run() # Should be OK
             self.assertRaises(task.LockException, try_locking)
         assert not self.task.is_working()
         self.task.try_locking()
         assert didrun
+        assert not self.task.is_working()
+        self.task.unlock() # Just to try it
+        self.task.unlock() # Just to try it again
         assert not self.task.is_working()
 
