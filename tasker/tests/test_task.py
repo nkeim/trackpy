@@ -167,7 +167,7 @@ class TestTask(unittest.TestCase):
 
     def test_locking(self):
         didrun = []
-        @self.task([], [])
+        @self.task([], ['dummy.tag'])
         def try_locking(tsk, ins):
             didrun.append(True)
             assert self.task.is_working()

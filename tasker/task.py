@@ -237,8 +237,6 @@ class TaskUnit(object):
             for it in self.input_tasks: it.sync() # Really, really inefficient
             if not isUpToDate(self.output_files, self.input_files):
                 self.run()
-            elif len(self.outs) == 0 and len(self.ins) == 0:
-                self.run() # No inputs or outputs -> always runs
         finally:
             self._syncing = False
     def is_current(self):
@@ -283,19 +281,6 @@ class TaskUnitNoStore(TaskUnit):
 
     def __call__(self):
         return self.load()
-
-    def sync(self):
-        """Make sure all dependencies are up to date."""
-        if self._syncing:
-            raise LockException('Cyclic dependency: "%s" somehow depends on '
-                                'itself.' % self.__name__)
-        try:
-            self._syncing = True
-            for it in self.input_tasks: it.sync() # Really, really inefficient
-        finally:
-            self._syncing = False
-
-
 
 
 class Tasker(DirBase):

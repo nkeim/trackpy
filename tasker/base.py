@@ -21,6 +21,8 @@ def isUpToDate(targets, deps=[], tartimes=[], deptimes=[], require=False):
     """
     targetFiles = _toFiles(_listify(targets))
     depFiles = _toFiles(_listify(deps))
+    if not len(targetFiles): return True # Sanest behavior
+
     if not all([tf.exists() for tf in targetFiles]): return False
     if require and not all([df.exists() for df in depFiles]):
         raise IOError('Missing dependencies: %s' % \
