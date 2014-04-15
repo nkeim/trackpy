@@ -69,9 +69,9 @@ class DirBase(object):
     def __init__(self, loc='.'):
         self.p = path(loc).abspath()
         self._chdir_stack = []
-    name = property(lambda self: self.p.basename(),
+    name = property(lambda self: str(self.p.basename()),
             doc='Name of this directory')
-    parentname = property(lambda self: (self.p / '..').basename(),
+    parentname = property(lambda self: str((self.p / '..').basename()),
             doc='Name of parent directory')
     reset = cachedprop.reset
     def __repr__(self):
