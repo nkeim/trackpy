@@ -212,6 +212,11 @@ class TaskUnit(object):
             self._running = False
             if lockfile.exists(): lockfile.unlink()
             os.chdir(_old_dir)
+    def force(self):
+        """Re-run task and return outputs."""
+        for it in self.input_tasks: it.sync()
+        self.run()
+        return self.load()
     def sync(self):
         """run() task if required to keep outputs up to date."""
         if self._syncing:
@@ -299,3 +304,8 @@ class Tasker(DirBase):
     def _lockfile(self, taskname):
         """Returns path instance for task-specific lockfile"""
         return (self.p / DEFAULT_STATUS_DIR / _sanitize_filename(taskname))
+    def unlock(self):
+        """Remove "taskerstatus.json" to release working lock."""
+        sfn = self.p / DEFAULT_STATUS_FILE
+        if sfn.exists():
+            sfn.unlink()
