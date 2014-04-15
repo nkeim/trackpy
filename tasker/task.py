@@ -289,11 +289,17 @@ class TaskUnitNoStore(TaskUnit):
         raises a LockException.
         """
         with self._run_context() as ins:
-            return self.func(self, **ins)
+            return self.func(self, ins)
 
-    load = run
-    force = run
-    __call__ = load
+    def __call__(self):
+        """Update dependencies and run task.
+
+        Return value is passed directly from task function."""
+        self.sync()
+        return self.run()
+
+    load = __call__
+    force = __call__
 
 
 class Tasker(DirBase):
@@ -325,28 +331,18 @@ class Tasker(DirBase):
             return t
         return mktask
 
-    def stores(self, *list_outputs, **dict_outputs):
+    def stores(self, *outputs):
         """Create a task that stores outputs in the specified files.
 
-        Arguments should be either in a sequence ('list_outputs'), in
-        which case the task function's outputs should also be a sequence,
-        or they should be keywords ('dict_outputs'), in which case the task
-        function should return a dict.
+        Arguments ('outputs') should match the sequence (or single value)
+        returned by the task function.
 
-        'stores()' returns a decorator that turns the function into a task with
-        the specified outputs, and inputs given by that function's
+        'stores()' returns a decorator that turns the function into a task
+        with the specified outputs, and inputs given by that function's
         keyword arguments (and default values).
         """
-        if list_outputs and dict_outputs:
-            raise ValueError('Cannot specify arguments in both sequential and '
-                             'keyword forms.')
-        elif list_outputs:
-            if len(list_outputs) == 1:
-                outs = list_outputs[0]
-            else:
-                outs = list_outputs
-        else:
-            outs = dict_outputs # Might be empty
+        if len(outputs) == 1:
+            outputs = outputs[0] # No sequences at all.
 
         def rectify_filepath(iospec):
             if isinstance(iospec, FileBase):
@@ -355,19 +351,20 @@ class Tasker(DirBase):
 
         def mktask(func):
             args, _, _, defaults = inspect.getargspec(func)
-            if len(args) - 1 != len(defaults):
-                raise RuntimeError('All task function args (except first) should '
-                                   'have default values,')
-            elif not args:
+            if defaults is None: defaults = {}
+            if not args:
                 raise RuntimeError('Task function must take at least one argument: '
                                    'the task instance itself.')
+            elif len(args) - 1 != len(defaults):
+                raise RuntimeError('All task function args (except first) should '
+                                   'have default values,')
             ins = dict(zip(args[1:], defaults))
             @functools.wraps(func)
             def task_func_with_kw(tsk, ins):
                 return func(tsk, **ins)
-            if outs:
+            if outputs:
                 t = TaskUnit(task_func_with_kw, _nestmap(rectify_filepath, ins),
-                             _nestmap(rectify_filepath, outs), self)
+                             _nestmap(rectify_filepath, outputs), self)
             else:
                 t = TaskUnitNoStore(task_func_with_kw,
                                     _nestmap(rectify_filepath, ins), self)

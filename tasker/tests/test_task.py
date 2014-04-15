@@ -56,10 +56,6 @@ class TestTask(unittest.TestCase):
     def setUp(self):
         os.chdir(basedir)
         self.testdir = path(tempfile.mkdtemp())
-        #self.testdir = basedir / 'tmptest'
-        #if self.testdir.isdir():
-        #    self.testdir.rmtree()
-        #self.testdir.makedirs_p()
         self.task = self.enter_dir(self.testdir)
     def tearDown(self):
         os.chdir(basedir)
@@ -70,7 +66,7 @@ class TestTask(unittest.TestCase):
         # Make sure we know what to do with TaskUnit and FileBase instances
         self.task.three()
         assert isinstance(self.task.one.outs[0], storage.FileBase)
-        with self.task.p:
+        with self.task:
             self.assertEqual(self.task.one._prepare_data(self.task.one.outs_as_given), 
                     'one_str')
             self.assertEqual(task._nestmap(self.task.two._prepare_data,
@@ -183,3 +179,63 @@ class TestTask(unittest.TestCase):
         self.task.unlock() # Just to try it again
         assert not self.task.is_working()
 
+class TestNewStyleTasks(TestTask):
+    def enter_dir(self, dirname):
+        """Set up a sample pipeline in a directory.
+        Tests depend on sample data defined here."""
+        task = TaskerSubclass(dirname)
+        # Totally arbitrary configuration "scheme"
+        task.conf = dict(one='one_str', two=2.0, name=task.name)
+        task.one_count = 0
+        @task.stores(storage.JSON('one.json'))
+        def one(tsk):
+            """Docstring: One"""
+            task.one_count += 1
+            return task.conf['one'] # Goes to JSON
+        @task.stores(storage.JSON('two.json'), storage.JSON('2b.json'))
+        def two(tsk, one=one):
+            self.assertEqual(one, task.conf['one'])
+            return [task.conf['two'],
+                        {'twofloat': task.conf['two'],
+                            'onestr': one, 'name': task.conf['name']}]
+        @task.stores(storage.Pandas('three.h5')) # Positional form
+        def three(tsk, one=one, two=two):
+            assert one == task.conf['one']
+            twofloat = two[1]['twofloat']
+            assert twofloat == task.conf['two']
+            return pandas.Series([twofloat,])
+        @task.stores('four')
+        def four(tsk, three=three, td='three_dummy'):
+            assert three[0] == task.conf['two'] # First row of Series
+            self.assertEqual(td.basename(), 'three_dummy')
+            assert len(td.split()[0])
+            assert not td.exists()
+            (task.p / 'four').touch()
+            return 'dummy'
+        return task
+
+    def test_nostore_task(self):
+        @self.task
+        def doesnt_store(tsk, three=self.task.three):
+            return three[0]
+        @self.task.computes
+        def doesnt_store2(tsk, three=self.task.three):
+            return three[0]
+
+        assert not (self.task.p / 'three.h5').exists()
+        assert self.task.doesnt_store() == self.task.conf['two']
+        assert (self.task.p / 'three.h5').exists()
+        assert self.task.doesnt_store2() == self.task.conf['two']
+
+    def test_prepare_data(self):
+        """Make sure we know what to do with TaskUnit and FileBase instances"""
+        self.task.three()
+        assert isinstance(self.task.one.outs[0], storage.FileBase)
+        with self.task:
+            self.assertEqual(self.task.one._prepare_data(self.task.one.outs_as_given),
+                             'one_str')
+            self.assertEqual(task._nestmap(self.task.two._prepare_data,
+                                           self.task.one), 'one_str')
+            # Returned data structure mirrors that of input
+            self.assertIsInstance(task._nestmap(self.task.three._prepare_data,
+                                                self.task.three.ins_as_given), dict)
