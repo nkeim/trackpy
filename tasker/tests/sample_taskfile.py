@@ -11,15 +11,15 @@ def use(dirname):
     task.conf = dict(one='one', two=2.0, name=task.name)
     # We define the tasks here so that we can use closures for maximum
     # directory-specific flexibilty
-    @task([], JSON('one.json'))
+    @task.create_task([], JSON('one.json'))
     def one(tsk, ins):
         """Returns string set in config."""
         return task.conf['one'] # Goes to JSON
-    @task(one, [JSON('two.json'), JSON('2b.json')])
+    @task.create_task(one, [JSON('two.json'), JSON('2b.json')])
     def two(tsk, input):
         return task.conf['two'], {'twofloat': task.conf['two'], 
                 'onestr': input, 'name': task.conf['name']}
-    @task([one, two], Pandas('three.h5'))
+    @task.create_task([one, two], Pandas('three.h5'))
     def three(tsk, ins):
         """Returns a Pandas Series"""
         twofloat = ins[1][1]['twofloat']

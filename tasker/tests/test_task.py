@@ -27,24 +27,24 @@ class TestTask(unittest.TestCase):
         # Totally arbitrary configuration "scheme"
         task.conf = dict(one='one_str', two=2.0, name=task.name) 
         task.one_count = 0
-        @task([], storage.JSON('one.json'))
+        @task.create_task([], storage.JSON('one.json'))
         def one(tsk, ins):
             """Docstring: One"""
             task.one_count += 1
             assert len(ins) == 0
             return task.conf['one'] # Goes to JSON
-        @task(one, [storage.JSON('two.json'), storage.JSON('2b.json')])
+        @task.create_task(one, [storage.JSON('two.json'), storage.JSON('2b.json')])
         def two(tsk, input):
             self.assertEqual(input, task.conf['one'])
             return task.conf['two'], {'twofloat': task.conf['two'], 
                     'onestr': input, 'name': task.conf['name']}
-        @task([one, two], storage.Pandas('three.h5'))
+        @task.create_task([one, two], storage.Pandas('three.h5'))
         def three(tsk, ins):
             assert ins[0] == task.conf['one']
             twofloat = ins[1][1]['twofloat']
             assert twofloat == task.conf['two']
             return pandas.Series([twofloat,])
-        @task({'three': three, 'td': 'three_dummy'}, 'four')
+        @task.create_task({'three': three, 'td': 'three_dummy'}, 'four')
         def four(tsk, ins):
             assert ins['three'][0] == task.conf['two'] # First row of Series
             self.assertEqual(ins['td'].basename(), 'three_dummy')
@@ -127,7 +127,7 @@ class TestTask(unittest.TestCase):
             assert path('.').abspath().basename() == self.testdir.abspath().basename()
 
     def test_progress(self):
-        @self.task([], ['progress.tag'])
+        @self.task.create_task([], ['progress.tag'])
         def exercise_progress(tsk, ins):
             mon = progress.Monitor([self.task.p])
             def readprog():
@@ -167,7 +167,7 @@ class TestTask(unittest.TestCase):
 
     def test_locking(self):
         didrun = []
-        @self.task([], ['dummy.tag'])
+        @self.task.create_task([], ['dummy.tag'])
         def try_locking(tsk, ins):
             didrun.append(True)
             assert self.task.is_working()

@@ -1,5 +1,5 @@
 import exceptions, os
-import contextlib
+import inspect, contextlib, functools
 import json
 
 from path import path
@@ -103,6 +103,7 @@ class TaskUnit(object):
             fn = path(fileobj)
         if fn.isabs(): return fn
         else: return (self.p / fn).normpath().abspath()
+
     def _prepare_data(self, data_part):
         """Resolves 'data_part' into its run-time representation.
 
@@ -117,6 +118,7 @@ class TaskUnit(object):
             return _nestmap(data_part._prepare_data, data_part.outs_as_given)
         else:
             raise ValueError('%r does not specify a valid input source' % data_part)
+
     def _flatten_dependencies(self):
         """Returns a list of files and a list of tasks.
         Files are returned as absolute paths."""
@@ -131,6 +133,7 @@ class TaskUnit(object):
         return [f if f.isabs() else (self.p / f).abspath() \
                 for f in _toFiles(files)], \
                 list(tasks)
+
     def _flatten_dependencies_recurse(self, in_part):
         """Walks the 'self.ins' data structure, collecting objects."""
         flatten = lambda seq: reduce((lambda a,b: a+b), seq, [])
@@ -146,31 +149,7 @@ class TaskUnit(object):
         else:
             raise ValueError('Part of input specification could not be handled: %s' \
                     % repr(in_part))
-    def __repr__(self):
-        return 'TaskUnit: ' + self.func.__name__
-    def __hash__(self):
-        return id(self) # So we can put these in sets
 
-    # Public interface
-    def __call__(self):
-        """Update outputs if necessary and read from disk. 
-        
-        See load() for details of return value."""
-        self.sync()
-        return self.load()
-    def load(self):
-        """Return representation of task output on disk.
-
-        Structure is the same as in the task definition --- a single
-        value or a sequence of values.
-
-        Where a FileBase instance was used (i.e. a recognized file format like JSON()),
-        the contents of the file are returned. Otherwise, the path to the file is
-        returned.
-        """
-        # We return a dict in which the values are referred to by various names,
-        # the wame way we pass input data to self.func() itself.
-        return _nestmap(self._prepare_data, self.outs_as_given)
     @contextlib.contextmanager
     def _run_context(self):
         """Handles locking, inputs, and progress before and after
@@ -205,6 +184,35 @@ class TaskUnit(object):
             self._running = False
             if lockfile.exists(): lockfile.unlink()
             os.chdir(_old_dir)
+
+    def __repr__(self):
+        return 'TaskUnit: ' + self.func.__name__
+
+    def __hash__(self):
+        return id(self) # So we can put these in sets
+
+    # Public interface
+    def __call__(self):
+        """Update outputs if necessary and read from disk. 
+        
+        See load() for details of return value."""
+        self.sync()
+        return self.load()
+
+    def load(self):
+        """Return representation of task output on disk.
+
+        Structure is the same as in the task definition --- a single
+        value or a sequence of values.
+
+        Where a FileBase instance was used (i.e. a recognized file format like JSON()),
+        the contents of the file are returned. Otherwise, the path to the file is
+        returned.
+        """
+        # We return a dict in which the values are referred to by various names,
+        # the wame way we pass input data to self.func() itself.
+        return _nestmap(self._prepare_data, self.outs_as_given)
+
     def run(self):
         """Execute task (always) and write output files in recognized formats.
 
@@ -222,11 +230,13 @@ class TaskUnit(object):
                 assert len(outdata) == len(self.outs)
                 for of, od in zip(self.outs, outdata):
                     if isinstance(of, FileBase): of.save(od)
+
     def force(self):
         """Re-run task and return outputs."""
         for it in self.input_tasks: it.sync()
         self.run()
         return self.load()
+
     def sync(self):
         """Update dependencies and run() task if required."""
         if self._syncing:
@@ -239,18 +249,22 @@ class TaskUnit(object):
                 self.run()
         finally:
             self._syncing = False
+
     def is_current(self):
         """True if this task and all its dependencies are current."""
         return isUpToDate(self.output_files, self.input_files) and \
                 all([it.is_current() for it in self.input_tasks])
+
     def report(self):
         """List tasks that would have to be run to update outputs."""
         return _uniq(self._report_recurse())
+
     def _report_recurse(self):
         """Returns list of sub-tasks that are out of date."""
         r = reduce(lambda a,b: a+b, [[],] + [t._report_recurse() for t in self.input_tasks])
         if not isUpToDate(self.output_files, self.input_files): r.append(self)
         return r
+
     def clear(self):
         """Delete this task's output files and directories."""
         for f in self.output_files:
@@ -278,9 +292,8 @@ class TaskUnitNoStore(TaskUnit):
             return self.func(self, **ins)
 
     load = run
-
-    def __call__(self):
-        return self.load()
+    force = run
+    __call__ = load
 
 
 class Tasker(DirBase):
@@ -291,9 +304,13 @@ class Tasker(DirBase):
         super(Tasker, self).__init__(dirname)
         self.tasks = {}
         self.conf = {}
-    def __call__(self, ins, outs):
+
+    def create_task(self, ins, outs):
         """Return a decorator that turns the function into a task
-        with registered inputs and outputs."""
+        with registered inputs and outputs.
+
+        This is more explicit (and inelegant) than stores().
+        """
         # If FileBase instances in 'ins' and 'outs' do not refer to absolute paths,
         # they need to be made relative to our working dir.
         def rectify_filepath(iospec):
@@ -307,6 +324,64 @@ class Tasker(DirBase):
             setattr(self, t.__name__, t)
             return t
         return mktask
+
+    def stores(self, *list_outputs, **dict_outputs):
+        """Create a task that stores outputs in the specified files.
+
+        Arguments should be either in a sequence ('list_outputs'), in
+        which case the task function's outputs should also be a sequence,
+        or they should be keywords ('dict_outputs'), in which case the task
+        function should return a dict.
+
+        'stores()' returns a decorator that turns the function into a task with
+        the specified outputs, and inputs given by that function's
+        keyword arguments (and default values).
+        """
+        if list_outputs and dict_outputs:
+            raise ValueError('Cannot specify arguments in both sequential and '
+                             'keyword forms.')
+        elif list_outputs:
+            if len(list_outputs) == 1:
+                outs = list_outputs[0]
+            else:
+                outs = list_outputs
+        else:
+            outs = dict_outputs # Might be empty
+
+        def rectify_filepath(iospec):
+            if isinstance(iospec, FileBase):
+                iospec.set_parentdir(self.p)
+            return iospec
+
+        def mktask(func):
+            args, _, _, defaults = inspect.getargspec(func)
+            if len(args) - 1 != len(defaults):
+                raise RuntimeError('All task function args (except first) should '
+                                   'have default values,')
+            elif not args:
+                raise RuntimeError('Task function must take at least one argument: '
+                                   'the task instance itself.')
+            ins = dict(zip(args[1:], defaults))
+            @functools.wraps(func)
+            def task_func_with_kw(tsk, ins):
+                return func(tsk, **ins)
+            if outs:
+                t = TaskUnit(task_func_with_kw, _nestmap(rectify_filepath, ins),
+                             _nestmap(rectify_filepath, outs), self)
+            else:
+                t = TaskUnitNoStore(task_func_with_kw,
+                                    _nestmap(rectify_filepath, ins), self)
+            self.tasks[t.__name__] = t
+            setattr(self, t.__name__, t)
+            return t
+        return mktask
+
+    def computes(self, func):
+        """Decorator that creates a task without stored outputs."""
+        return self.stores()(func)
+
+    __call__ = computes
+
     def which(self, filename):
         """Return the TaskUnit instance that is responsible for 'filename',
         which can be relative to this instance's working dir, or absolute."""
@@ -316,10 +391,12 @@ class Tasker(DirBase):
         for t in self.tasks:
             if fnp_abs in t.output_files:
                 return t
+
     def clear(self):
         """Remove all output files of all tasks."""
         for t in self.tasks.values():
             t.clear()
+
     def is_working(self, task=None):
         """Check "taskerstatus.json" to see if any task is running.
 
@@ -335,9 +412,11 @@ class Tasker(DirBase):
                     return True
         except (IOError, ValueError, KeyError):
             return False
+
     def _lockfile(self, taskname):
         """Returns path instance for task-specific lockfile"""
         return (self.p / DEFAULT_STATUS_DIR / _sanitize_filename(taskname))
+
     def unlock(self):
         """Remove "taskerstatus.json" to release working lock."""
         sfn = self.p / DEFAULT_STATUS_FILE
