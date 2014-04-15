@@ -222,6 +222,11 @@ class TaskUnit(object):
                 assert len(outdata) == len(self.outs)
                 for of, od in zip(self.outs, outdata):
                     if isinstance(of, FileBase): of.save(od)
+    def force(self):
+        """Re-run task and return outputs."""
+        for it in self.input_tasks: it.sync()
+        self.run()
+        return self.load()
     def sync(self):
         """Update dependencies and run() task if required."""
         if self._syncing:
@@ -348,3 +353,8 @@ class Tasker(DirBase):
     def _lockfile(self, taskname):
         """Returns path instance for task-specific lockfile"""
         return (self.p / DEFAULT_STATUS_DIR / _sanitize_filename(taskname))
+    def unlock(self):
+        """Remove "taskerstatus.json" to release working lock."""
+        sfn = self.p / DEFAULT_STATUS_FILE
+        if sfn.exists():
+            sfn.unlink()
