@@ -6,6 +6,7 @@ import numpy as np
 import pandas
 
 DEFAULT_STATUS_FILE = 'taskerstatus.json'
+DEFAULT_STATUS_DIR = 'taskerlocks'
 
 class Monitor(object):
     """Monitor workers in many directories."""
@@ -229,12 +230,12 @@ class Progress(StatusFile):
             self.update(tmpinfo)
             yield item
 
-    def finish(self, info=None):
+    def _finish(self, info=None):
         """Signal end of task.
 
         info : dict of extra info to report (optional)
 
-        (This is called automatically by Task.)
+        (This is called automatically by TaskUnit.)
         """
         tmpinfo = {'status': 'done'}
         if self.total is not None:

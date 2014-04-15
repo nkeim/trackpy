@@ -5,7 +5,7 @@ from path import path
 
 from .base import isUpToDate, DirBase
 from .storage import FileBase
-from .progress import Progress, DEFAULT_STATUS_FILE
+from .progress import Progress, DEFAULT_STATUS_FILE, DEFAULT_STATUS_DIR
 
 
 class LockException(exceptions.IOError):
@@ -20,6 +20,14 @@ def _listify(arg):
 
 def _toFiles(names):
     return [path(n) for n in names]
+
+def _sanitize_filename(name):
+    ret = "".join([c for c in name
+                    if c.isalpha() or c.isdigit() or c in ' _']).rstrip()
+    if not len(ret):
+        raise ValueError('"%s" contains no valid characters from which to form a '
+                         'filename.' % name)
+    return ret
 
 def _uniq(l):
     """Removes duplicates from a list, preserving order."""
@@ -68,7 +76,7 @@ class TaskUnit(object):
         Tips for writing func(tsk, ins):
             'tsk.progress' is a statusboard.Progress instance that makes
                 it easy for your task to report its status. Its start()
-                and finish() methods will be called automatically.
+                and _finish() methods will be called automatically.
         """
         self.func = func
         self.__name__ = func.__name__
@@ -171,20 +179,23 @@ class TaskUnit(object):
         directory. If this file already indicates a "working" status,
         raises a LockException.
         """
+        lockfile = self.taskman._lockfile(self.__name__)
         if self._running:
             raise LockException('Attempting to run task "%s" in "%s" when '
                                 'already in progress.' % \
                                 (self.__name__, self.taskman.p))
         if self.taskman.is_working(task=self.__name__): # Suspenders and a belt
             raise LockException('%s says task "%s" is already running there.' % \
-                                (self.taskman.p / DEFAULT_STATUS_FILE, self.__name__))
+                                (lockfile, self.__name__))
         _old_dir = os.getcwd()
         try:
             self._running = True
             os.chdir(self.p)
             self.progress = Progress(persistent_info={
                 'task': self.__name__, 'pid': os.getpid(), })
-            self.progress.working() # Establish lock
+            lockfile.dirname().makedirs_p()
+            lockfile.touch() # Establish lock
+            self.progress.working()
             try:
                 ins = _nestmap(self._prepare_data, self.ins_as_given)
                 outdata = _listify(self.func(self, ins))
@@ -193,12 +204,13 @@ class TaskUnit(object):
                     for of, od in zip(self.outs, outdata):
                         if isinstance(of, FileBase): of.save(od)
             except:
-                self.progress.update({'status': 'ERROR'}) # Release lock
+                self.progress.update({'status': 'ERROR'})
                 raise
             else:
-                self.progress.finish() # Release lock
+                self.progress._finish() # Change status to "done"
         finally:
             self._running = False
+            if lockfile.exists(): lockfile.unlink()
             os.chdir(_old_dir)
     def sync(self):
         """run() task if required to keep outputs up to date."""
@@ -279,8 +291,11 @@ class Tasker(DirBase):
             sfinfo = json.load(sf)
             if sfinfo['status'] == 'working':
                 if task is not None:
-                    return sfinfo['task'] == task
+                    return self._lockfile(task).exists()
                 else:
                     return True
         except (IOError, ValueError, KeyError):
             return False
+    def _lockfile(self, taskname):
+        """Returns path instance for task-specific lockfile"""
+        return (self.p / DEFAULT_STATUS_DIR / _sanitize_filename(taskname))
