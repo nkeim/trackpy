@@ -1,7 +1,7 @@
 import imp, hashlib, sys
 from path import path
 
-def use(directory, taskfile='taskfile.py', taskfile_sub='taskfile_sub.py', **kw):
+def use(directory='.', taskfile='taskfile.py', taskfile_sub='taskfile_sub.py', **kw):
     """Return an object for 'directory' that gives access to its tasks.
 
     This is an instance of Tasker (or a subclass thereof) that is defined and
