@@ -115,7 +115,7 @@ class TaskUnit(object):
             return data_part.read()
         elif isinstance(data_part, TaskUnit): # Another task
             # Continued by that task, so that its working dir, etc. are used
-            return _nestmap(data_part._prepare_data, data_part.outs_as_given)
+            return data_part.load()
         else:
             raise ValueError('%r does not specify a valid input source' % data_part)
 

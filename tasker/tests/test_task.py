@@ -219,8 +219,8 @@ class TestNewStyleTasks(TestTask):
         def doesnt_store(tsk, three=self.task.three):
             return three[0]
         @self.task.computes
-        def doesnt_store2(tsk, three=self.task.three):
-            return three[0]
+        def doesnt_store2(tsk, three_val=self.task.doesnt_store):
+            return three_val
 
         assert not (self.task.p / 'three.h5').exists()
         assert self.task.doesnt_store() == self.task.conf['two']
