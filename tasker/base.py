@@ -21,7 +21,6 @@ def isUpToDate(targets, deps=[], tartimes=[], deptimes=[], require=False):
     """
     targetFiles = _toFiles(_listify(targets))
     depFiles = _toFiles(_listify(deps))
-    if not len(targetFiles): return True # Sanest behavior
 
     if not all([tf.exists() for tf in targetFiles]): return False
     if require and not all([df.exists() for df in depFiles]):
@@ -36,6 +35,8 @@ def isUpToDate(targets, deps=[], tartimes=[], deptimes=[], require=False):
     else:
         # No dependencies
         return True # Missing target files were already handled above.
+
+
 class cachedprop(property):
     'Convert a method into a cached attribute'
     def __init__(self, method, doc=None):
@@ -58,6 +59,8 @@ class cachedprop(property):
             attr = getattr(cls, name)
             if isinstance(attr, cachedprop):
                 delattr(self, name)
+
+
 class DirBase(object):
     """Basis for directory-based data accessors.
     
