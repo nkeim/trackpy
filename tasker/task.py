@@ -216,38 +216,38 @@ class TaskUnit(object):
                 'itself.' % self.__name__)
         try:
             self._syncing = True
-
             up_results = [it._walk_up(run=run) for it in self.input_tasks]
-            result = dict(
-                all_current=all(ur['all_current'] for ur in up_results),
-                needed_tasks=reduce(lambda a,b: a+b,
-                                    [ur['needed_tasks'] for ur in up_results], []),
-                )
-
-            input_mtimes = [-1] + [ur['mtime'] for ur in up_results]
-            for inf in self.input_files:
-                try:
-                    input_mtimes.append(inf.mtime)
-                except OSError:
-                    pass
-
-            output_mtime = self._output_mtime()
-
-            # Run task if no defined outputs, missing outputs, stale outputs,
-            # or an upstream task has been re-run.
-            if force or output_mtime is None or output_mtime == -1 or \
-                            output_mtime < max(input_mtimes) or \
-                            not result['all_current']:
-                result['all_current'] = False
-                result['needed_tasks'].append(self)
-                if run:
-                    self.run()
-                    output_mtime = self._output_mtime()
-                    if output_mtime is not None and output_mtime < max(input_mtimes):
-                        raise RuntimeError('Task "%s" failed to update its output files.'
-                                           % self.__name__)
         finally:
             self._syncing = False
+
+        result = dict(
+            all_current=all(ur['all_current'] for ur in up_results),
+                # Note that all([]) == True
+            needed_tasks=reduce(lambda a,b: a+b,
+                                [ur['needed_tasks'] for ur in up_results], []),
+            )
+        input_mtimes = [-1] + [ur['mtime'] for ur in up_results]
+        for inf in self.input_files:
+            try:
+                input_mtimes.append(inf.mtime)
+            except OSError:
+                pass
+
+        output_mtime = self._output_mtime()
+
+        # Run task if no defined outputs, missing outputs, stale outputs,
+        # or an upstream task has been re-run.
+        if force or output_mtime is None or output_mtime == -1 or \
+                        output_mtime < max(input_mtimes) or \
+                        not result['all_current']:
+            result['all_current'] = False
+            result['needed_tasks'].append(self)
+            if run:
+                self.run()
+                output_mtime = self._output_mtime()
+                if output_mtime is not None and output_mtime < max(input_mtimes):
+                    raise RuntimeError('Task "%s" failed to update its output files.'
+                                       % self.__name__)
 
         if output_mtime is None:
             result['mtime'] = max(input_mtimes)  # No outputs

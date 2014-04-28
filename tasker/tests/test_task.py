@@ -173,7 +173,7 @@ class TestTask(unittest.TestCase):
             assert self.task.is_working(task='try_locking')
             assert not self.task.is_working(task='something_else')
             self.task.one.run() # Should be OK
-            self.assertRaises(RuntimeError, try_locking)
+            self.assertRaises(task.LockException, try_locking)
         assert not self.task.is_working()
         self.task.try_locking()
         assert didrun
