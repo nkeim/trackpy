@@ -49,7 +49,6 @@ class TestTask(unittest.TestCase):
             assert ins['three'][0] == task.conf['two'] # First row of Series
             self.assertEqual(ins['td'].basename(), 'three_dummy')
             assert len(ins['td'].split()[0])
-            assert not ins['td'].exists()
             (task.p / 'four').touch()
             return 'dummy'
         return task
@@ -91,20 +90,24 @@ class TestTask(unittest.TestCase):
     def test_docstr(self):
         self.assertEqual(self.task.one.__doc__, 'Docstring: One')
     def test_clear(self):
-        self.assertEqual(self.task.one(), 'one_str')
+        assert self.task.one() == 'one_str'
         self.task.two()
-        self.assertEqual(self.task.one_count, 1) # two() should not re-run one()
+        assert self.task.one_count == 1  # two() should not re-run one()
         self.task.one.clear()
-        self.assertEqual(self.task.one_count, 1)
-        self.assertEqual(self.task.one(), 'one_str') # Re-runs one()
-        self.assertEqual(self.task.one_count, 2)
+        assert self.task.one_count == 1
+        assert self.task.one() == 'one_str'  # Re-runs one()
+        assert self.task.one_count == 2
     def test_report(self):
-        self.assertSetEqual(set(self.task.four.report()), set(self.task.tasks.values()))
+        self.assertSetEqual(set(self.task.four.report()),
+                            set([self.task.one, self.task.two,
+                                 self.task.three, self.task.four]))
     def test_clearall(self):
         self.task.four()
         self.assertSetEqual(set(self.task.four.report()), set())
         self.task.clear()
-        self.assertSetEqual(set(self.task.four.report()), set(self.task.tasks.values()))
+        self.assertSetEqual(set(self.task.four.report()),
+                            set([self.task.one, self.task.two,
+                                 self.task.three, self.task.four]))
     def test_twodirs(self):
         """Make sure separate task instances do not mix paths"""
         td2 = path(tempfile.mkdtemp())
@@ -209,23 +212,38 @@ class TestNewStyleTasks(TestTask):
             assert three[0] == task.conf['two'] # First row of Series
             self.assertEqual(td.basename(), 'three_dummy')
             assert len(td.split()[0])
-            assert not td.exists()
             (task.p / 'four').touch()
             return 'dummy'
+
+        # No storage
+        @task
+        def doesnt_store(tsk, three=task.three):
+            return three[0]
+        @task.computes # Alternate syntax
+        def doesnt_store2(tsk, three_val=task.doesnt_store):
+            return three_val
+
+        # Storage with no-store gap
+        @task.stores(storage.JSON('gapped.json'))
+        def gapped(tsk, three_val=task.doesnt_store):
+            return three_val
+
         return task
 
     def test_nostore_task(self):
-        @self.task
-        def doesnt_store(tsk, three=self.task.three):
-            return three[0]
-        @self.task.computes
-        def doesnt_store2(tsk, three_val=self.task.doesnt_store):
-            return three_val
-
         assert not (self.task.p / 'three.h5').exists()
         assert self.task.doesnt_store() == self.task.conf['two']
         assert (self.task.p / 'three.h5').exists()
         assert self.task.doesnt_store2() == self.task.conf['two']
+
+    def test_nostore_gap(self):
+        """Check whether updates to upstream tasks propagate through
+        a no-store task.
+        """
+        assert self.task.gapped() == self.task.conf['two']
+        self.task.conf['two'] = 100
+        self.task.two.clear()
+        assert self.task.gapped() == self.task.conf['two']
 
     def test_prepare_data(self):
         """Make sure we know what to do with TaskUnit and FileBase instances"""

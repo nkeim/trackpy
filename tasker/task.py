@@ -121,7 +121,7 @@ class TaskUnit(object):
 
     def _flatten_dependencies(self):
         """Returns a list of files and a list of tasks.
-        Files are returned as absolute paths."""
+        Files are returned as absolute path objects."""
         deps = self._flatten_dependencies_recurse(self.ins)
         files, tasks = set(), set()
         for v in deps:
@@ -191,6 +191,70 @@ class TaskUnit(object):
     def __hash__(self):
         return id(self) # So we can put these in sets
 
+    def _output_mtime(self):
+        """Newest modification time of output files.
+
+        None if no outputs defined; -1 if any are missing.
+        """
+        if not len(self.output_files):
+            return None
+        else:
+            try:
+                return max([of.mtime for of in self.output_files])
+            except OSError:
+                return -1  # Missing file
+
+    def _walk_up(self, run=False, force=False):
+        """Go up the dependency tree, looking for out-of-date tasks,
+        including this one.
+
+        run : if true, run() tasks that are out of date.
+        force : if true, run *this* task whether it is out of date or not.
+        """
+        if self._syncing:
+            raise RuntimeError('Cyclic dependency: "%s" somehow depends on '
+                'itself.' % self.__name__)
+        try:
+            self._syncing = True
+            up_results = [it._walk_up(run=run) for it in self.input_tasks]
+        finally:
+            self._syncing = False
+
+        result = dict(
+            all_current=all(ur['all_current'] for ur in up_results),
+                # Note that all([]) == True
+            needed_tasks=reduce(lambda a,b: a+b,
+                                [ur['needed_tasks'] for ur in up_results], []),
+            )
+        input_mtimes = [-1] + [ur['mtime'] for ur in up_results]
+        for inf in self.input_files:
+            try:
+                input_mtimes.append(inf.mtime)
+            except OSError:
+                pass
+
+        output_mtime = self._output_mtime()
+
+        # Run task if no defined outputs, missing outputs, stale outputs,
+        # or an upstream task has been re-run.
+        if force or output_mtime is None or output_mtime == -1 or \
+                        output_mtime < max(input_mtimes) or \
+                        not result['all_current']:
+            result['all_current'] = False
+            result['needed_tasks'].append(self)
+            if run:
+                self.run()
+                output_mtime = self._output_mtime()
+                if output_mtime is not None and output_mtime < max(input_mtimes):
+                    raise RuntimeError('Task "%s" failed to update its output files.'
+                                       % self.__name__)
+
+        if output_mtime is None:
+            result['mtime'] = max(input_mtimes)  # No outputs
+        else:
+            result['mtime'] = output_mtime
+        return result  # needed_tasks, all_current, mtime
+
     # Public interface
     def __call__(self):
         """Update outputs if necessary and read from disk. 
@@ -233,37 +297,20 @@ class TaskUnit(object):
 
     def force(self):
         """Re-run task and return outputs."""
-        for it in self.input_tasks: it.sync()
-        self.run()
+        self._walk_up(run=True, force=True)
         return self.load()
 
     def sync(self):
-        """Update dependencies and run() task if required."""
-        if self._syncing:
-            raise LockException('Cyclic dependency: "%s" somehow depends on '
-                'itself.' % self.__name__)
-        try:
-            self._syncing = True
-            for it in self.input_tasks: it.sync() # Really, really inefficient
-            if not isUpToDate(self.output_files, self.input_files):
-                self.run()
-        finally:
-            self._syncing = False
+        """Update dependencies, and this task, as needed."""
+        self._walk_up(run=True)
 
     def is_current(self):
         """True if this task and all its dependencies are current."""
-        return isUpToDate(self.output_files, self.input_files) and \
-                all([it.is_current() for it in self.input_tasks])
+        return self._walk_up()['all_current']
 
     def report(self):
         """List tasks that would have to be run to update outputs."""
-        return _uniq(self._report_recurse())
-
-    def _report_recurse(self):
-        """Returns list of sub-tasks that are out of date."""
-        r = reduce(lambda a,b: a+b, [[],] + [t._report_recurse() for t in self.input_tasks])
-        if not isUpToDate(self.output_files, self.input_files): r.append(self)
-        return r
+        return _uniq(self._walk_up()['needed_tasks'])
 
     def clear(self):
         """Delete this task's output files and directories."""
@@ -280,7 +327,11 @@ class TaskUnitNoStore(TaskUnit):
         super(TaskUnitNoStore, self).__init__(func, ins, [], taskman)
 
     def run(self):
-        """Execute task (always) without updating dependencies.
+        """Does nothing, as there is nothing on disk to update."""
+        pass
+
+    def __call__(self):
+        """Run task and return its output, after updating dependencies.
 
         Temporarily changes to task's working directory.
 
@@ -288,15 +339,9 @@ class TaskUnitNoStore(TaskUnit):
         directory. If this file already indicates a "working" status,
         raises a LockException.
         """
+        self.sync()
         with self._run_context() as ins:
             return self.func(self, ins)
-
-    def __call__(self):
-        """Update dependencies and run task.
-
-        Return value is passed directly from task function."""
-        self.sync()
-        return self.run()
 
     load = __call__
     force = __call__

@@ -1,6 +1,6 @@
 import os
+import cPickle
 import json
-import pandas
 from path import path
 
 class FileBase(object):
@@ -25,6 +25,7 @@ class FileBase(object):
         return self.read()
 
 class Pandas(FileBase):
+    """Store a Pandas data object."""
     def __init__(self, filename, parentdir='.', key=None):
         """Specify location of file. 
         
@@ -38,14 +39,18 @@ class Pandas(FileBase):
             self.key = os.path.splitext(os.path.basename(self.filepath))[0]
         else:
             self.key = key
+
     def read(self):
+        import pandas
         hdf = pandas.HDFStore(self.filepath, 'r')
         try:
             r = hdf[self.key]
         finally:
             hdf.close()
         return r
+
     def save(self, data):
+        import pandas
         self._mkdir()
         hdf = pandas.HDFStore(self.filepath, 'w')
         try:
@@ -54,8 +59,26 @@ class Pandas(FileBase):
             hdf.close()
 
 class JSON(FileBase):
+    """Store basic Python types (dicts, lists, floats, ints, etc.)
+    in a human-readable text format.
+    """
     def read(self):
-        return json.load(open(self.filepath, 'r'))
+        with open(self.filepath, 'r') as f:
+            return json.load(f)
+
     def save(self, data):
         self._mkdir()
-        json.dump(data, open(self.filepath, 'w'), indent=4, separators=(',', ': '))
+        with open(self.filepath, 'w') as f:
+            json.dump(data, f, indent=4, separators=(',', ': '))
+
+class Pickle(FileBase):
+    """Store most any Python object in a Python-only binary format.
+    """
+    def read(self):
+        with open(self.filepath, 'r') as f:
+            return cPickle.load(f)
+
+    def save(self, data):
+        self._mkdir()
+        with open(self.filepath, 'w') as f:
+            cPickle.dump(data, f)
