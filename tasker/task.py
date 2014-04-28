@@ -235,7 +235,6 @@ class TaskUnit(object):
 
             # Run task if no defined outputs, missing outputs, stale outputs,
             # or an upstream task has been re-run.
-            print self.__name__, output_mtime, input_mtimes
             if force or output_mtime is None or output_mtime == -1 or \
                             output_mtime < max(input_mtimes) or \
                             not result['all_current']:
