@@ -191,6 +191,71 @@ class TaskUnit(object):
     def __hash__(self):
         return id(self) # So we can put these in sets
 
+    def _output_mtime(self):
+        """Newest modification time of output files.
+
+        None if no outputs defined; -1 if any are missing.
+        """
+        if not len(self.output_files):
+            return None
+        else:
+            try:
+                return max([of.mtime for of in self.output_files])
+            except OSError:
+                return -1  # Missing file
+
+    def _walk_up(self, run=False, force=False):
+        """Go up the dependency tree, looking for out-of-date tasks,
+        including this one.
+
+        run : if true, run() tasks that are out of date.
+        force : if true, run *this* task whether it is out of date or not.
+        """
+        if self._syncing:
+            raise RuntimeError('Cyclic dependency: "%s" somehow depends on '
+                'itself.' % self.__name__)
+        try:
+            self._syncing = True
+
+            up_results = [it._walk_up(run=run) for it in self.input_tasks]
+            result = dict(
+                all_current=all(ur['all_current'] for ur in up_results),
+                needed_tasks=reduce(lambda a,b: a+b,
+                                    [ur['needed_tasks'] for ur in up_results], []),
+                )
+
+            input_mtimes = [-1] + [ur['mtime'] for ur in up_results]
+            for inf in self.input_files:
+                try:
+                    input_mtimes.append(inf.mtime)
+                except OSError:
+                    pass
+
+            output_mtime = self._output_mtime()
+
+            # Run task if no defined outputs, missing outputs, stale outputs,
+            # or an upstream task has been re-run.
+            print self.__name__, output_mtime, input_mtimes
+            if force or output_mtime is None or output_mtime == -1 or \
+                            output_mtime < max(input_mtimes) or \
+                            not result['all_current']:
+                result['all_current'] = False
+                result['needed_tasks'].append(self)
+                if run:
+                    self.run()
+                    output_mtime = self._output_mtime()
+                    if output_mtime is not None and output_mtime < max(input_mtimes):
+                        raise RuntimeError('Task "%s" failed to update its output files.'
+                                           % self.__name__)
+        finally:
+            self._syncing = False
+
+        if output_mtime is None:
+            result['mtime'] = max(input_mtimes)  # No outputs
+        else:
+            result['mtime'] = output_mtime
+        return result  # needed_tasks, all_current, mtime
+
     # Public interface
     def __call__(self):
         """Update outputs if necessary and read from disk. 
@@ -233,86 +298,20 @@ class TaskUnit(object):
 
     def force(self):
         """Re-run task and return outputs."""
-        for it in self.input_tasks: it.sync()
-        self.run()
+        self._walk_up(run=True, force=True)
         return self.load()
 
     def sync(self):
-        """Update dependencies and run() task if required.
-
-        Returns timestamp of (up-to-date) task outputs.
-        """
-        if self._syncing:
-            raise RuntimeError('Cyclic dependency: "%s" somehow depends on '
-                'itself.' % self.__name__)
-        try:
-            self._syncing = True
-
-            output_mtime = self._output_mtime()
-            input_mtimes = [-1] + [it.sync() for it in self.input_tasks]
-            # Don't worry about missing input files.
-            for inf in self.input_files:
-                try:
-                    input_mtimes.append(inf.mtime)
-                except OSError:
-                    pass
-
-            # Run task if missing outputs, stale outputs, or no defined inputs.
-            if output_mtime is None or output_mtime < max(input_mtimes) or \
-                    len(self.input_tasks) + len(self.input_files) == 0:
-                self.run()
-                output_mtime = self._output_mtime()
-                if output_mtime is None or output_mtime < max(input_mtimes):
-                    raise RuntimeError('Task "%s" failed to update its output files.'
-                                       % self.__name__)
-        finally:
-            self._syncing = False
-        return output_mtime
+        """Update dependencies, and this task, as needed."""
+        self._walk_up(run=True)
 
     def is_current(self):
         """True if this task and all its dependencies are current."""
-        # Note that this needlessly retrieves mtime of all upstream files twice!
-        return self._output_mtime() >= self._input_mtime() and \
-                all([it.is_current() for it in self.input_tasks])
-
-    def _output_mtime(self):
-        """Newest timestamp of this task's outputs.
-
-        Returns None if anything is missing; -1 if task has no outputs.
-        """
-        try:
-            return max([-1] + [of.mtime for of in self.output_files])
-        except OSError:
-            return None  # Missing file
-
-    def _input_mtime(self):
-        """Newest timestamp of this task's input files and tasks.
-
-        Returns None if anything is missing. Returns -1 if task has no inputs.
-
-        Note that this is not recursive; it looks only at the _output_mtime()
-        of task dependencies.
-        """
-        try:
-            mtimes = [-1] + [inf.mtime for inf in self.input_files]
-        except OSError:
-            return None  # Missing file
-        mtimes.extend([intask._output_mtime() for intask in self.input_tasks])
-
-        if any(mt is None for mt in mtimes):
-            return None
-        else:
-            return max(mtimes)
+        return self._walk_up()['all_current']
 
     def report(self):
         """List tasks that would have to be run to update outputs."""
-        return _uniq(self._report_recurse())
-
-    def _report_recurse(self):
-        """Returns list of sub-tasks that are out of date."""
-        r = reduce(lambda a,b: a+b, [t._report_recurse() for t in self.input_tasks], [])
-        if not self._output_mtime() >= self._input_mtime(): r.append(self)
-        return r
+        return _uniq(self._walk_up()['needed_tasks'])
 
     def clear(self):
         """Delete this task's output files and directories."""
@@ -328,25 +327,12 @@ class TaskUnitNoStore(TaskUnit):
     def __init__(self, func, ins, taskman):
         super(TaskUnitNoStore, self).__init__(func, ins, [], taskman)
 
-    def _output_mtime(self):
-        """Newest timestamp of this task's "outputs", i.e. newest timestamp
-        of its inputs.
-
-        Returns None if anything is missing. Returns -1 if no inputs are found.
-        """
-        return self._input_mtime()
-
-    def sync(self):
-        """Update dependencies.
-
-        Returns timestamp of (up-to-date) task inputs.
-        """
-        for it in self.input_tasks:
-            it.sync()
-        return self._input_mtime()
-
     def run(self):
-        """Execute task (always) without updating dependencies.
+        """Does nothing, as there is nothing on disk to update."""
+        pass
+
+    def __call__(self):
+        """Run task and return its output, after updating dependencies.
 
         Temporarily changes to task's working directory.
 
@@ -354,15 +340,9 @@ class TaskUnitNoStore(TaskUnit):
         directory. If this file already indicates a "working" status,
         raises a LockException.
         """
+        self.sync()
         with self._run_context() as ins:
             return self.func(self, ins)
-
-    def __call__(self):
-        """Update dependencies and run task.
-
-        Return value is passed directly from task function."""
-        self.sync()
-        return self.run()
 
     load = __call__
     force = __call__

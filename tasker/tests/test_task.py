@@ -49,7 +49,6 @@ class TestTask(unittest.TestCase):
             assert ins['three'][0] == task.conf['two'] # First row of Series
             self.assertEqual(ins['td'].basename(), 'three_dummy')
             assert len(ins['td'].split()[0])
-            assert not ins['td'].exists()
             (task.p / 'four').touch()
             return 'dummy'
         return task
@@ -91,13 +90,13 @@ class TestTask(unittest.TestCase):
     def test_docstr(self):
         self.assertEqual(self.task.one.__doc__, 'Docstring: One')
     def test_clear(self):
-        self.assertEqual(self.task.one(), 'one_str')
+        assert self.task.one() == 'one_str'
         self.task.two()
-        self.assertEqual(self.task.one_count, 1) # two() should not re-run one()
+        assert self.task.one_count == 1  # two() should not re-run one()
         self.task.one.clear()
-        self.assertEqual(self.task.one_count, 1)
-        self.assertEqual(self.task.one(), 'one_str') # Re-runs one()
-        self.assertEqual(self.task.one_count, 2)
+        assert self.task.one_count == 1
+        assert self.task.one() == 'one_str'  # Re-runs one()
+        assert self.task.one_count == 2
     def test_report(self):
         self.assertSetEqual(set(self.task.four.report()),
                             set([self.task.one, self.task.two,
@@ -174,7 +173,7 @@ class TestTask(unittest.TestCase):
             assert self.task.is_working(task='try_locking')
             assert not self.task.is_working(task='something_else')
             self.task.one.run() # Should be OK
-            self.assertRaises(task.LockException, try_locking)
+            self.assertRaises(RuntimeError, try_locking)
         assert not self.task.is_working()
         self.task.try_locking()
         assert didrun
@@ -213,7 +212,6 @@ class TestNewStyleTasks(TestTask):
             assert three[0] == task.conf['two'] # First row of Series
             self.assertEqual(td.basename(), 'three_dummy')
             assert len(td.split()[0])
-            assert not td.exists()
             (task.p / 'four').touch()
             return 'dummy'
 
@@ -244,7 +242,7 @@ class TestNewStyleTasks(TestTask):
         """
         assert self.task.gapped() == self.task.conf['two']
         self.task.conf['two'] = 100
-        self.task.three.clear()
+        self.task.two.clear()
         assert self.task.gapped() == self.task.conf['two']
 
     def test_prepare_data(self):
