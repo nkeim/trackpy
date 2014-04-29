@@ -426,8 +426,9 @@ class Tasker(DirBase):
     __call__ = computes
 
     def which(self, filename):
-        """Return the TaskUnit instance that is responsible for 'filename',
-        which can be relative to this instance's working dir, or absolute."""
+        """Return the TaskUnit instance that is responsible for 'filename'.
+
+        'filename' can be relative to this instance's working dir, or absolute."""
         fnp = path.filename
         if fnp.isabs: fnp_abs = fnp
         else: fnp_abs = (self.p / fnp).abspath()
@@ -465,3 +466,25 @@ class Tasker(DirBase):
         sfn = self.p / DEFAULT_STATUS_FILE
         if sfn.exists():
             sfn.unlink()
+    def menu(self, alphasort=False):
+        """List tasks, statuses, and descriptions.
+        
+        If 'alphasort', sort alphabetically; otherwise, display in the order added."""
+        print 'Tasks for %s:' % self.p
+        if not len(self.tasks):
+            print 'No tasks defined.'
+            return
+        tasknames = self.tasks.keys()
+        donestrings = ['*' if t.is_current() else '' for t in self.tasks.values()]
+        doclines = [t.__doc__.split('\n')[0].strip() if t.__doc__ else ''\
+                for t in self.tasks.values()]
+        maxname = max(map(len, tasknames))
+        width = 80  # Width of display
+        print '{0:^5} {1:<{maxname}} {2:<{descwidth}}'.format('Done?', 'Name', 'Description',
+                maxname=maxname, descwidth=width - 7 - maxname)
+        print '-' * width
+        for done, name, desc in zip(donestrings, tasknames, doclines):
+            print '{0:^5} {1:<{maxname}} {2:<{descwidth}}'.format(done, name, desc,
+                    maxname=maxname, descwidth=width - 7 - maxname)
+
+        

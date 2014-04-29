@@ -182,6 +182,11 @@ class TestTask(unittest.TestCase):
         self.task.unlock() # Just to try it again
         assert not self.task.is_working()
 
+    def test_menu(self):
+        self.task.menu()
+        self.assertEqual(self.task.one(), 'one_str')
+        # Check display of completed task
+        self.task.menu()
 class TestNewStyleTasks(TestTask):
     def enter_dir(self, dirname):
         """Set up a sample pipeline in a directory.
