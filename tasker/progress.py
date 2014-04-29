@@ -61,7 +61,10 @@ class Monitor(object):
         try:
             while True:
                 sb = self.show(custom_columns=custom_columns)
-                IPython.display.clear_output()
+                try:
+                    IPython.display.clear_output(wait=True)
+                except TypeError:  # "wait" flag not supported in IPy 1.x.x
+                    IPython.display.clear_output()
                 IPython.display.display_html(sb.to_html(na_rep=''), raw=True)
                 time.sleep(interval)
         except KeyboardInterrupt:
