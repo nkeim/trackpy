@@ -226,14 +226,16 @@ class TaskUnit(object):
                 # Note that all([]) == True
             needed_tasks=reduce(lambda a,b: a+b,
                                 [ur['needed_tasks'] for ur in up_results], []),
+            visited_tasks=reduce(lambda a,b: a+b,
+                                [ur['visited_tasks'] for ur in up_results], [self,]),
             )
+
         input_mtimes = [-1] + [ur['mtime'] for ur in up_results]
         for inf in self.input_files:
             try:
                 input_mtimes.append(inf.mtime)
             except OSError:
                 pass
-
         output_mtime = self._output_mtime()
 
         # Run task if missing outputs, stale outputs,
@@ -466,25 +468,23 @@ class Tasker(DirBase):
         sfn = self.p / DEFAULT_STATUS_FILE
         if sfn.exists():
             sfn.unlink()
-    def menu(self, alphasort=False):
+    def menu(self):
         """List tasks, statuses, and descriptions.
         
-        If 'alphasort', sort alphabetically; otherwise, display in the order added."""
+        Tasks are displayed in the order added."""
         print 'Tasks for %s:' % self.p
         if not len(self.tasks):
             print 'No tasks defined.'
             return
         tasknames = self.tasks.keys()
-        donestrings = ['*' if t.is_current() else '' for t in self.tasks.values()]
+        donestrings = ['+' if t.is_current() else '' for t in self.tasks.values()]
         doclines = [t.__doc__.split('\n')[0].strip() if t.__doc__ else ''\
                 for t in self.tasks.values()]
         maxname = max(map(len, tasknames))
         width = 80  # Width of display
-        print '{0:^5} {1:<{maxname}} {2:<{descwidth}}'.format('Done?', 'Name', 'Description',
-                maxname=maxname, descwidth=width - 7 - maxname)
+        print '{0:^5} {1:<{maxname}}  {2:<{descwidth}}'.format('Done?', 'Name', 'Description',
+                maxname=maxname, descwidth=width - 8 - maxname)
         print '-' * width
         for done, name, desc in zip(donestrings, tasknames, doclines):
-            print '{0:^5} {1:<{maxname}} {2:<{descwidth}}'.format(done, name, desc,
-                    maxname=maxname, descwidth=width - 7 - maxname)
-
-        
+            print '{0:^5} {1:<{maxname}}  {2:<{descwidth}}'.format(done, name, desc,
+                    maxname=maxname, descwidth=width - 8 - maxname)
