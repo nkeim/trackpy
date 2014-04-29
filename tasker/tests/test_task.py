@@ -66,13 +66,13 @@ class TestTask(unittest.TestCase):
         self.task.three()
         assert isinstance(self.task.one.outs[0], storage.FileBase)
         with self.task:
-            self.assertEqual(self.task.one._prepare_data(self.task.one.outs_as_given), 
+            self.assertEqual(self.task.one._prepare_data(self.task.one._outs_as_given), 
                     'one_str')
             self.assertEqual(task._nestmap(self.task.two._prepare_data,
                 self.task.one), 'one_str')
             # Returned data structure mirrors that of input
             self.assertIsInstance(task._nestmap(self.task.three._prepare_data,
-                self.task.three.ins_as_given), list)
+                self.task.three._ins_as_given), list)
     def test_2tasks(self):
         """Make sure up-to-date tasks do not rerun"""
         self.assertEqual(self.task.one(), 'one_str')
@@ -271,10 +271,10 @@ class TestNewStyleTasks(TestTask):
         self.task.three()
         assert isinstance(self.task.one.outs[0], storage.FileBase)
         with self.task:
-            self.assertEqual(self.task.one._prepare_data(self.task.one.outs_as_given),
+            self.assertEqual(self.task.one._prepare_data(self.task.one._outs_as_given),
                              'one_str')
             self.assertEqual(task._nestmap(self.task.two._prepare_data,
                                            self.task.one), 'one_str')
             # Returned data structure mirrors that of input
             self.assertIsInstance(task._nestmap(self.task.three._prepare_data,
-                                                self.task.three.ins_as_given), dict)
+                                                self.task.three._ins_as_given), dict)

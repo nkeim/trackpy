@@ -48,13 +48,13 @@ def _nestmap(fcn, data_part):
         return fcn(data_part)
 
 class TaskUnit(object):
-    def __init__(self, func, ins, outs, taskman):
+    def __init__(self, func, ins, outs, tasker):
         """Create a task.
         'func' is a function which turns 'ins' into 'outs'.
         'ins' is some data structure (preferably list or dict) populated
             with filenames, FileBase instances, or other TaskUnit instances.
         'outs' is a filename or FileBase instance, or a list thereof.
-        'taskman' is a parent Tasker instance, which presently serves to 
+        'tasker' is a parent Tasker instance, which presently serves to 
             set the working directory for this task.
 
         When 'func' is called, it takes two arguments:
@@ -83,12 +83,12 @@ class TaskUnit(object):
         self.func = func
         self.__name__ = func.__name__
         self.__doc__ = func.__doc__
-        self.taskman = taskman
-        self.p = self.taskman.p # This directory will always be my working dir
-        self.outs_as_given = outs
+        self.tasker = tasker
+        self.p = self.tasker.p # This directory will always be my working dir
+        self._outs_as_given = outs
         self.outs = _listify(outs)
         self.output_files = map(self._get_filename, self.outs)
-        self.ins_as_given = ins
+        self._ins_as_given = ins
         self.ins = _listify(ins)
         self.input_files, self.input_tasks = self._flatten_dependencies()
 
@@ -156,12 +156,12 @@ class TaskUnit(object):
         """Handles locking, inputs, and progress before and after
         running a task. Yields the task's inputs.
         """
-        lockfile = self.taskman._lockfile(self.__name__)
+        lockfile = self.tasker._lockfile(self.__name__)
         if self._running:
             raise LockException('Attempting to run task "%s" in "%s" when '
                                 'already in progress.' % \
-                                (self.__name__, self.taskman.p))
-        if self.taskman.is_working(task=self.__name__): # Suspenders and a belt
+                                (self.__name__, self.tasker.p))
+        if self.tasker.is_working(task=self.__name__): # Suspenders and a belt
             raise LockException('%s says task "%s" is already running there.' % \
                                 (lockfile, self.__name__))
         _old_dir = os.getcwd()
@@ -174,7 +174,7 @@ class TaskUnit(object):
             lockfile.touch() # Establish lock
             self.progress.working()
             try:
-                ins = _nestmap(self._prepare_data, self.ins_as_given)
+                ins = _nestmap(self._prepare_data, self._ins_as_given)
                 yield ins # Run the task function
             except:
                 self.progress.update({'status': 'ERROR'})
@@ -278,7 +278,7 @@ class TaskUnit(object):
         """
         # We return a dict in which the values are referred to by various names,
         # the wame way we pass input data to self.func() itself.
-        return _nestmap(self._prepare_data, self.outs_as_given)
+        return _nestmap(self._prepare_data, self._outs_as_given)
 
     def run(self):
         """Execute task (always) and write output files in recognized formats.
@@ -326,8 +326,8 @@ class TaskUnitNoStore(TaskUnit):
     """For task functions that don't store results to disk.
     """
 
-    def __init__(self, func, ins, taskman):
-        super(TaskUnitNoStore, self).__init__(func, ins, [], taskman)
+    def __init__(self, func, ins, tasker):
+        super(TaskUnitNoStore, self).__init__(func, ins, [], tasker)
 
     def run(self):
         """Does nothing, as there is nothing on disk to update."""
