@@ -235,11 +235,11 @@ class TaskUnit(object):
 
         output_mtime = self._output_mtime()
 
-        # Run task if no defined outputs, missing outputs, stale outputs,
+        # Run task if missing outputs, stale outputs,
         # or an upstream task has been re-run.
-        if force or output_mtime is None or output_mtime == -1 or \
-                        output_mtime < max(input_mtimes) or \
-                        not result['all_current']:
+        if force or output_mtime == -1 or \
+                    (output_mtime is not None and output_mtime < max(input_mtimes)) or \
+                    not result['all_current']:
             result['all_current'] = False
             result['needed_tasks'].append(self)
             if run:

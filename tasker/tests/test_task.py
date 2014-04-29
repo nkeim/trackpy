@@ -245,6 +245,22 @@ class TestNewStyleTasks(TestTask):
         self.task.two.clear()
         assert self.task.gapped() == self.task.conf['two']
 
+    def test_nostore_current(self):
+        """Check whether a no-store task correctly reports its status.
+        
+        (Which should reflect the status of upstream tasks.)"""
+        assert not self.task.three.is_current()
+        assert not self.task.doesnt_store.is_current()
+        # Run task
+        assert self.task.doesnt_store() == self.task.conf['two']
+        assert self.task.three.is_current()
+        assert self.task.doesnt_store.is_current()
+        assert not self.task.gapped.is_current()
+        assert len(self.task.gapped.report()) == 1
+        assert self.task.gapped() == self.task.conf['two']
+        assert self.task.gapped.is_current()
+        assert self.task.doesnt_store.is_current()
+
     def test_prepare_data(self):
         """Make sure we know what to do with TaskUnit and FileBase instances"""
         self.task.three()
