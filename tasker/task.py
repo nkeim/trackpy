@@ -1,10 +1,11 @@
 import exceptions, os
 import inspect, contextlib, functools
+from collections import OrderedDict
 import json
 
 from path import path
 
-from .base import isUpToDate, DirBase
+from .base import DirBase
 from .storage import FileBase
 from .progress import Progress, DEFAULT_STATUS_FILE, DEFAULT_STATUS_DIR
 
@@ -353,7 +354,7 @@ class Tasker(DirBase):
     Initialize with the directory name."""
     def __init__(self, dirname):
         super(Tasker, self).__init__(dirname)
-        self.tasks = {}
+        self.tasks = OrderedDict()
         self.conf = {}
 
     def create_task(self, ins, outs):

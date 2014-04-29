@@ -9,34 +9,6 @@ def _listify(arg):
 def _toFiles(names):
     return [path(n) for n in names]
 
-def isUpToDate(targets, deps=[], tartimes=[], deptimes=[], require=False):
-    """Checks the modification times of files to see if targets need remaking.
-
-    Each argument can be a list, or a single item.
-    'targets' and 'deps' are lists of files. 
-    'tartimes' and 'deptimes' are lists of additional mtimes to consider.
-
-    Checks that all targets exist (even if no dependencies are given).
-    If 'require' is set, raises an exception on missing dependencies.
-    """
-    targetFiles = _toFiles(_listify(targets))
-    depFiles = _toFiles(_listify(deps))
-
-    if not all([tf.exists() for tf in targetFiles]): return False
-    if require and not all([df.exists() for df in depFiles]):
-        raise IOError('Missing dependencies: %s' % \
-                str([df for df in depFiles if not df.exists()]))
-    targetFileTimes = [tar.mtime for tar in targetFiles]
-    depFileTimes = [dep.mtime for dep in depFiles if dep.exists()]
-    auxTargetTimes = _listify(tartimes)
-    auxDepTimes = _listify(deptimes)
-    if len(depFileTimes + auxDepTimes):
-        return max(depFileTimes + auxDepTimes) <= min(targetFileTimes + auxTargetTimes)
-    else:
-        # No dependencies
-        return True # Missing target files were already handled above.
-
-
 class cachedprop(property):
     'Convert a method into a cached attribute'
     def __init__(self, method, doc=None):
