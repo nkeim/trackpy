@@ -1,9 +1,12 @@
-from tasker.storage import *
+import os
+from path import path
 
 import tempfile, shutil
 import unittest
 import numpy
 import pandas
+
+from tasker.storage import Pandas, Pickle, JSON
 
 def test_Pandas():
     data = pandas.Series(numpy.random.random((100,)))
