@@ -213,6 +213,8 @@ class Progress(StatusFile):
         total : total units of work (optional)
         info : dict of extra information to report (optional)
 
+        If 'total' is not given, tries to get it from len(iterable).
+
         Example:
         for frame in tally(frames, len(frames)):
             do_something_with(frame)
@@ -222,6 +224,11 @@ class Progress(StatusFile):
             tmpinfo = {'status': 'working',
                 'current': i + 1,
                 'time_per': self.stopwatch.mean_lap_time()}
+            if total is None:
+                try:
+                    total = len(iterable)
+                except TypeError:
+                    total = None
             if total is not None:
                 self.total = total
                 tmpinfo['total'] = total
