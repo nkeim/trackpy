@@ -464,10 +464,14 @@ class Tasker(DirBase):
         return (self.p / DEFAULT_STATUS_DIR / _sanitize_filename(taskname))
 
     def unlock(self):
-        """Remove "taskerstatus.json" to release working lock."""
+        """Remove all lock and status files, to release working lock."""
         sfn = self.p / DEFAULT_STATUS_FILE
         if sfn.exists():
             sfn.unlink()
+        lfd = self.p / DEFAULT_STATUS_DIR
+        if lfd.exists() and lfd.isdir():
+            assert not lfd.samefile(self.p)  # Basic safety check
+            lfd.rmtree()
     def menu(self):
         """List tasks, statuses, and descriptions.
         
