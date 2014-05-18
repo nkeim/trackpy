@@ -12,9 +12,9 @@ class SetTasker(Tasker):
     def __init__(self, *args, **kw):
         super(SetTasker, self).__init__(*args, **kw)
 
-    def use(self, dirname, *args, **kw):
+    def use(self, dirname, **kw):
         """use() a directory with path relative to this one's"""
-        return use(self.p / dirname, *args, **kw)
+        return use(self.p / dirname, **kw)
 
     @cachedprop
     def groups(self):
@@ -25,9 +25,9 @@ class SetTasker(Tasker):
         """Get absolute paths of a named group of subdirectories"""
         return [path(t).abspath() for t in self.groups[groupname]]
 
-    def grp(self, groupname, *args, **kw):
+    def grp(self, groupname, **kw):
         """use() each directory in a named group"""
-        return [use(self.p / dirname, *args, **kw) for dirname in self.groups[groupname]]
+        return [use(self.p / dirname, **kw) for dirname in self.groups[groupname]]
 
     @cachedprop
     def aliases(self):
@@ -38,7 +38,7 @@ class SetTasker(Tasker):
         """Get absolute path of an aliased subdirectory"""
         return [path(t).abspath() for t in self.aliases[aliasname]]
 
-    def al(self, aliasname, *args, **kw):
+    def al(self, aliasname, **kw):
         """use() an aliased subdirectory"""
-        return use(self.p / self.aliases[aliasname], *args, **kw)
+        return use(self.p / self.aliases[aliasname], **kw)
 
