@@ -48,38 +48,45 @@ def _nestmap(fcn, data_part):
         return fcn(data_part)
 
 class TaskUnit(object):
+    """Represents a single task within a Tasker instance.
+    Ordinarily one uses the computes() and stores() methods of
+    the Tasker instance to define a task, instead of instantiating
+    a TaskUnit directly.
+
+    DETAILS:
+
+    Parameters:
+    'func' is a function which turns 'ins' into 'outs'.
+    'ins' is some data structure (preferably list or dict) populated
+        with filenames, FileBase instances, or other TaskUnit instances.
+    'outs' is a filename or FileBase instance, or a list thereof.
+    'tasker' is a parent Tasker instance, which presently serves to
+        set the working directory for this task.
+
+    When 'func' is called, it takes two arguments:
+        - The first is its own TaskUnit instance.
+        - The second is structured like 'ins', but with FileBase instances
+        replaced with those files' contents, and with each TaskUnit instance
+        replaced with a list (or single value) corresponding to that
+        TaskUnit's outputs.
+
+    'func' returns a list (or single value) which corresponds to the elements of
+    'outs'. Elements not corresponding to a FileBase instance are ignored; the
+    contents of those files must be writen with code inside 'func',
+    and read by a separate function.
+
+    In general, any filename can be either relative to the task's working directory.
+    or absolute. 'func' will always be executed in the task's working directory.
+
+    When a user asks for the outputs of 'func', they are loaded from disk and
+    returned as a dict, which is indexed just like in the argument to 'func'.
+
+    Tips for writing func(tsk, ins):
+        'tsk.progress' is a statusboard.Progress instance that makes
+            it easy for your task to report its status. Its start()
+            and _finish() methods will be called automatically.
+    """
     def __init__(self, func, ins, outs, tasker):
-        """Create a task.
-        'func' is a function which turns 'ins' into 'outs'.
-        'ins' is some data structure (preferably list or dict) populated
-            with filenames, FileBase instances, or other TaskUnit instances.
-        'outs' is a filename or FileBase instance, or a list thereof.
-        'tasker' is a parent Tasker instance, which presently serves to 
-            set the working directory for this task.
-
-        When 'func' is called, it takes two arguments:
-            - The first is its own TaskUnit instance.
-            - The second is structured like 'ins', but with FileBase instances
-            replaced with those files' contents, and with each TaskUnit instance
-            replaced with a list (or single value) corresponding to that
-            TaskUnit's outputs.
-
-        'func' returns a list (or single value) which corresponds to the elements of 
-        'outs'. Elements not corresponding to a FileBase instance are ignored; the
-        contents of those files must be writen with code inside 'func',
-        and read by a separate function.
-
-        In general, any filename can be either relative to the task's working directory.
-        or absolute. 'func' will always be executed in the task's working directory.
-
-        When a user asks for the outputs of 'func', they are loaded from disk and 
-        returned as a dict, which is indexed just like in the argument to 'func'.
-
-        Tips for writing func(tsk, ins):
-            'tsk.progress' is a statusboard.Progress instance that makes
-                it easy for your task to report its status. Its start()
-                and _finish() methods will be called automatically.
-        """
         self.func = func
         self.__name__ = func.__name__
         self.__doc__ = func.__doc__
