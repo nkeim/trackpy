@@ -354,7 +354,7 @@ class Tasker(DirBase):
     """Object to set up tasks within a single directory.
     
     Initialize with the directory name."""
-    def __init__(self, dirname):
+    def __init__(self, dirname='.'):
         super(Tasker, self).__init__(dirname)
         self.tasks = OrderedDict()
         self.conf = AttrDict()
