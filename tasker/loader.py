@@ -15,14 +15,14 @@ def use(directory='.', taskfile='taskfile.py', taskfile_sub='taskfile_sub.py', *
     The use() that is found is called with 'directory' and any additional keyword 
     arguments.
     """
-    tfmod = taskmod(directory, taskfile=taskfile)
+    tfmod = taskmod(directory, taskfile=taskfile, taskfile_sub=taskfile_sub)
     try:
         return tfmod.use(directory, **kw)
     except:
         sys.stderr.write('Problem calling use() for %s\n' % directory)
         raise
 
-def taskmod(directory, taskfile='taskfile.py', taskfile_sub='taskfile_sub.py'):
+def taskmod(directory='.', taskfile='taskfile.py', taskfile_sub='taskfile_sub.py'):
     """Import the module that defines tasks (and anything else) for 'directory'.
 
     If 'taskfile' is not in 'directory', searches upward from 'directory' to find
@@ -36,7 +36,7 @@ def taskmod(directory, taskfile='taskfile.py', taskfile_sub='taskfile_sub.py'):
     tf_hash = hashlib.sha1(str(tf) + str(dirpath)).hexdigest()[:10]
     return imp.load_source('_taskfile_' + tf_hash, tf)
 
-def which(directory, taskfile='taskfile.py', taskfile_sub='taskfile_sub.py'):
+def which(directory='.', taskfile='taskfile.py', taskfile_sub='taskfile_sub.py'):
     """Returns path to the Python file defining tasker tasks for 'directory'.
 
     'taskfile' is the glob pattern to match with filenames, or an absolute path.
