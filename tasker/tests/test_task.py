@@ -266,6 +266,14 @@ class TestNewStyleTasks(TestTask):
         assert self.task.gapped.is_current()
         assert self.task.doesnt_store.is_current()
 
+    def test_nostore_clear(self):
+        """clear() on a no-storing task should raise an error."""
+        self.task.gapped()
+        assert self.task.gapped.is_current()
+        assert self.task.doesnt_store.is_current()
+        self.assertRaises(NotImplementedError,
+                          self.task.doesnt_store.clear)
+
     def test_prepare_data(self):
         """Make sure we know what to do with TaskUnit and FileBase instances"""
         self.task.three()

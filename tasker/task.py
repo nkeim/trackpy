@@ -360,6 +360,11 @@ class TaskUnitNoStore(TaskUnit):
     load = __call__
     force = __call__
 
+    def clear(self):
+        raise NotImplementedError("This task has no stored "
+                    "outputs to clear. You must call clear() for each "
+                    "storing task that depends on it.")
+
 
 class Tasker(DirBase):
     """Object to set up tasks within a single directory.
@@ -452,7 +457,8 @@ class Tasker(DirBase):
     def clear(self):
         """Remove all output files of all tasks."""
         for t in self.tasks.values():
-            t.clear()
+            if not isinstance(t, TaskUnitNoStore):
+                t.clear()
 
     def is_working(self, task=None):
         """Check "taskerstatus.json" to see if any task is running.
