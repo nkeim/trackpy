@@ -72,24 +72,6 @@ class Monitor(object):
             IPython.display.display_html(sb.to_html(na_rep=''), raw=True)
             print 'Last update: ' + datetime.datetime.now().strftime('%c')
             return
-    # FIXME: Need to check that process name is python (b/c file PID may be out of date)
-    # It may suffice to check whether status is "working"
-    #def abort(self, indices=None):
-    #    """Interrupts tasks running LOCALLY on this computer.
-    #
-    #    indices : Optional sequence of indices to the DataFrame displayed by show()
-    #    """
-    #    if indices is not None:
-    #        pids = self.get_statuses().ix[list(indices)].pid
-    #    else:
-    #        pids = self.get_statuses().pid
-    #    for pid in pids:
-    #        try:
-    #            pid = int(pid)
-    #        except ValueError:
-    #            pass
-    #        else:
-    #            os.kill(pid, signal.SIGINT)
 
 class StatusFile(object):
     """JSON-formatted file for status of a long-running computation"""
