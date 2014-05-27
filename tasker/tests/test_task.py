@@ -294,3 +294,16 @@ class TestNewStyleTasks(TestTask):
         def a_list(tsk):
             return [1, 2, 3]
         a_list()
+
+    def test_traceback(self):
+        @self.task
+        def raises(tsk):
+            raise RuntimeError()
+        @self.task
+        def deps_on_raises(tsk, r=raises):
+            pass
+        try:
+            deps_on_raises()
+        except RuntimeError:
+            pass
+
