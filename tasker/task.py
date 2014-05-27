@@ -299,9 +299,13 @@ class TaskUnit(object):
         raises a LockException.
         """
         with self._run_context() as ins:
-            outdata = _listify(self.func(self, ins))
+            outdata = self.func(self, ins)
             if len(self.outs):
-                assert len(outdata) == len(self.outs)
+                if len(self.outs) == 1:
+                    outdata = [outdata,]
+                elif len(outdata) != len(self.outs):
+                    raise RuntimeError('Expected %i output values '
+                        'but got %i.' % (len(self.outs), len(self.outdata)))
                 for of, od in zip(self.outs, outdata):
                     if isinstance(of, FileBase): of.save(od)
 

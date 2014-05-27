@@ -278,3 +278,11 @@ class TestNewStyleTasks(TestTask):
             # Returned data structure mirrors that of input
             self.assertIsInstance(task._nestmap(self.task.three._prepare_data,
                                                 self.task.three._ins_as_given), dict)
+
+    def test_output_sequence(self):
+        """Check for bug in which a task returning a sequence couldn't
+        store to a single file."""
+        @self.task.stores('a_list.json')
+        def a_list(tsk):
+            return [1, 2, 3]
+        a_list()
