@@ -5,8 +5,8 @@ import signal
 import numpy as np
 import pandas
 
-DEFAULT_STATUS_FILE = 'taskerstatus.json'
-DEFAULT_STATUS_DIR = 'taskerlocks'
+DEFAULT_STATUS_FILE = '.taskerstatus.json'
+DEFAULT_STATUS_DIR = '.taskerlocks'
 
 class Monitor(object):
     """Monitor workers in many directories."""

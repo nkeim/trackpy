@@ -130,7 +130,7 @@ class TestTask(unittest.TestCase):
         def exercise_progress(tsk, ins):
             mon = progress.Monitor([self.task.p])
             def readprog():
-                assert (self.task.p / 'taskerstatus.json').exists()
+                assert (self.task.p / progress.DEFAULT_STATUS_FILE).exists()
                 stat = mon.get_statuses()
                 return stat.ix[0].to_dict()
             assert readprog()['status'] == 'working'
