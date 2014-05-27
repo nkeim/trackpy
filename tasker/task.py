@@ -470,7 +470,7 @@ class Tasker(DirBase):
             sfn.unlink()
         lfd = self.p / DEFAULT_STATUS_DIR
         if lfd.exists() and lfd.isdir():
-            assert not lfd.samefile(self.p)  # Basic safety check
+            assert not os.path.samefile(lfd, self.p)  # Basic safety check
             lfd.rmtree()
     def menu(self):
         """List tasks, statuses, and descriptions.
