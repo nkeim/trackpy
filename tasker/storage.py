@@ -25,6 +25,7 @@ class FileBase(object):
         self.filepath.dirname().makedirs_p()
     def __call__(self):
         return self.read()
+    # TODO: Useful __repr__()
 
 class Pandas(FileBase):
     """Store a Pandas data object."""

@@ -20,9 +20,6 @@ def _listify(arg):
     else:
         return [arg,]
 
-def _toFiles(names):
-    return [path(n) for n in names]
-
 def _sanitize_filename(name):
     ret = "".join([c for c in name
                     if c.isalpha() or c.isdigit() or c in ' _']).rstrip()
@@ -102,15 +99,17 @@ class TaskUnit(object):
         self._running = False # Prevent recursion
         self._syncing = False # Prevent recursion
 
-    # Deal with arbitrary user specification of task inputs
+    # Deal with arbitrary user specification of task inputs/outputs
     def _get_filename(self, fileobj):
         """Returns absolute path to a file, from a string or FileBase."""
         if isinstance(fileobj, FileBase): 
             fn = path(fileobj.filename)
         else:
             fn = path(fileobj)
-        if fn.isabs(): return fn
-        else: return (self.p / fn).normpath().abspath()
+        if fn.isabs():
+            return fn
+        else:
+            return (self.p / fn).normpath().abspath()
 
     def _prepare_data(self, data_part):
         """Resolves 'data_part' into its run-time representation.
@@ -136,11 +135,9 @@ class TaskUnit(object):
             if isinstance(v, TaskUnit):
                 tasks.add(v)
             else:
-                files.add(v)
-        # File paths should be relative to my working dir.
-        return [f if f.isabs() else (self.p / f).abspath() \
-                for f in _toFiles(files)], \
-                list(tasks)
+                files.add(v)  # Could be a filename or a FileBase instance
+        # Make file paths relative to my working dir.
+        return map(self._get_filename, files), list(tasks)
 
     def _flatten_dependencies_recurse(self, in_part):
         """Walks the 'self.ins' data structure, collecting objects."""

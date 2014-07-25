@@ -187,6 +187,8 @@ class TestTask(unittest.TestCase):
         self.assertEqual(self.task.one(), 'one_str')
         # Check display of completed task
         self.task.menu()
+
+
 class TestNewStyleTasks(TestTask):
     def enter_dir(self, dirname):
         """Set up a sample pipeline in a directory.
@@ -286,6 +288,18 @@ class TestNewStyleTasks(TestTask):
             # Returned data structure mirrors that of input
             self.assertIsInstance(task._nestmap(self.task.three._prepare_data,
                                                 self.task.three._ins_as_given), dict)
+
+    def test_file_dependency(self):
+        """A FileBase object is specified instead of a task."""
+        prebound = storage.JSON(self.testdir / 'prebound.json')
+        @self.task
+        def use_files(tsk, pb=prebound,
+                         runtime_bound=storage.JSON('runtime_bound.json')):
+            return True
+        input_filenames = [fn.basename() for fn in use_files.input_files]
+        assert len(input_filenames) == 2
+        assert 'prebound.json' in input_filenames
+        assert 'runtime_bound.json' in input_filenames
 
     def test_output_sequence(self):
         """Check for bug in which a task returning a sequence couldn't
