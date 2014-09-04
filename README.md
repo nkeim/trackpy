@@ -8,7 +8,7 @@ Tasker is a lightweight Python framework for organizing and automating scientifi
 - Write code that works on data in many similar directories.
 - Run said code in parallel.
 
-Check out the quick (yet rather comprehensive) demonstration notebook included with the software.
+Check out the quick (yet rather comprehensive) [demonstration notebook](http://nbviewer.ipython.org/github/nkeim/tasker/blob/master/tasker-intro.ipynb) included with the software.
 
 Unit tests may be run with `py.test`.
 
