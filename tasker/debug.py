@@ -19,23 +19,33 @@ EDIT_TRACEBACKS = True
 
 
 class tasker_traceback(object):
+    """Implement a shadow "call stack" that tracks the chain of tasks.
+
+    When an exception occurs, reports this information to the user.
+    
+    Instances of this class work as context managers.
+    """
     def __init__(self, name, cwd=None):
+        """Prepare a call stack entry for task 'name'
+        
+        'cwd' is the working directory. Only the cwd of the task
+        that raised the exception is reported."""
         self.name = name
         self.cwd = cwd
 
-    tasker_stack = []  # Class attribute
+    _tasker_stack = []  # Class attribute
 
     def __enter__(self):
         if self.name:
-            self.tasker_stack.append(self.name)
+            self._tasker_stack.append(self.name)
 
     def __exit__(self, typ, val, tb):
-        if tb is not None and len(self.tasker_stack):  # An exception occurred
+        if tb is not None and len(self._tasker_stack):  # An exception occurred
             # Print some debug info above traceback
             sys.stderr.write('Tasker task(s): ' +
-                    ' -> '.join(self.tasker_stack) + '\n')
+                    ' -> '.join(self._tasker_stack) + '\n')
             if self.cwd is not None:
-                sys.stderr.write('In "%s"\n' % self.cwd)
+                sys.stderr.write('Defined for "%s"\n' % self.cwd)
             if EDIT_TRACEBACKS:
                 sys.stderr.write('NOTE: Some internal Tasker logic is not '
                         'shown in this traceback.\n'
@@ -44,5 +54,8 @@ class tasker_traceback(object):
                         )
             sys.stderr.write('\n')
             # Print only one such message
-            while self.tasker_stack: self.tasker_stack.pop()
+            while self._tasker_stack: self._tasker_stack.pop()
+        else:
+            # Unwind our "call stack" naturally
+            if self._tasker_stack: self._tasker_stack.pop()
 
