@@ -35,7 +35,14 @@ class tasker_traceback(object):
             sys.stderr.write('Tasker task(s): ' +
                     ' -> '.join(self.tasker_stack) + '\n')
             if self.cwd is not None:
-                sys.stderr.write('In %s\n' % self.cwd)
+                sys.stderr.write('In "%s"\n' % self.cwd)
+            if EDIT_TRACEBACKS:
+                sys.stderr.write('NOTE: Some internal Tasker logic is not '
+                        'shown in this traceback.\n'
+                        'Set tasker.debug.EDIT_TRACEBACKS = False to '
+                        'see everything.\n'
+                        )
+            sys.stderr.write('\n')
             # Print only one such message
             while self.tasker_stack: self.tasker_stack.pop()
 
