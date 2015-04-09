@@ -12,7 +12,7 @@
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
 
-import exceptions, os
+import exceptions, os, sys
 import inspect, contextlib, functools
 from collections import OrderedDict
 import json
@@ -22,7 +22,8 @@ from path import path
 from .base import DirBase, AttrDict
 from .storage import FileBase
 from .progress import Progress, DEFAULT_STATUS_FILE, DEFAULT_STATUS_DIR
-
+from . import debug
+from .debug import tasker_traceback
 
 class LockException(exceptions.IOError):
     pass
@@ -52,11 +53,25 @@ def _uniq(l):
 def _nestmap(fcn, data_part):
     """Works like map() but preserves nested structures of dicts, lists, and tuples."""
     if isinstance(data_part, dict):
-        return {k: _nestmap(fcn, data_part[k]) for k in data_part}
+        try:
+            return {k: _nestmap(fcn, data_part[k]) for k in data_part}
+        except:  # Hide ourselves, and the dict comprehension
+            if debug.EDIT_TRACEBACKS:
+                typ, val, tb = sys.exc_info()
+                raise typ, val, tb.tb_next.tb_next
+            else:
+                raise
     elif isinstance(data_part, (list, tuple)):
         return [_nestmap(fcn, v) for v in data_part]
     else:
-        return fcn(data_part)
+        try:
+            return fcn(data_part)
+        except:  # Remove ourselves from the traceback
+            if debug.EDIT_TRACEBACKS:
+                typ, val, tb = sys.exc_info()
+                raise typ, val, tb.tb_next
+            else:
+                raise
 
 class TaskUnit(object):
     """Represents a single task within a Tasker instance.
@@ -136,7 +151,14 @@ class TaskUnit(object):
             return data_part.read()
         elif isinstance(data_part, TaskUnit): # Another task
             # Continued by that task, so that its working dir, etc. are used
-            return data_part.load()
+            try:
+                return data_part.load()
+            except:  # Remove ourselves from the traceback
+                if debug.EDIT_TRACEBACKS:
+                    typ, val, tb = sys.exc_info()
+                    raise typ, val, tb.tb_next
+                else:
+                    raise
         else:
             raise ValueError('%r does not specify a valid input source' % data_part)
 
@@ -169,40 +191,51 @@ class TaskUnit(object):
             raise ValueError('Part of input specification could not be handled: %s' \
                     % repr(in_part))
 
-    @contextlib.contextmanager
-    def _run_context(self):
-        """Handles locking, inputs, and progress before and after
-        running a task. Yields the task's inputs.
+    def __enter__(self):
+        """Context manager. Handles locking, inputs, and progress 
+        before and after running a task. Yields the task's inputs.
         """
-        lockfile = self.tasker._lockfile(self.__name__)
+        self._lockfile = self.tasker._lockfile(self.__name__)
         if self._running:
             raise LockException('Attempting to run task "%s" in "%s" when '
                                 'already in progress.' % \
                                 (self.__name__, self.tasker.p))
-        if self.tasker.is_working(task=self.__name__): # Suspenders and a belt
+        if self.tasker.is_working(task=self.__name__):  # Suspenders and a belt
             raise LockException('%s says task "%s" is already running there.' % \
-                                (lockfile, self.__name__))
-        _old_dir = os.getcwd()
+                                (self._lockfile, self.__name__))
+        self._old_dir = os.getcwd()
         try:
             self._running = True
             os.chdir(self.p)
             self.progress = Progress(persistent_info={
                 'task': self.__name__, 'pid': os.getpid(), })
-            lockfile.dirname().makedirs_p()
-            lockfile.touch() # Establish lock
+            self._lockfile.dirname().makedirs_p()
+            self._lockfile.touch() # Establish lock
             self.progress.working()
             try:
                 ins = _nestmap(self._prepare_data, self._ins_as_given)
-                yield ins # Run the task function
             except:
-                self.progress.update({'status': 'ERROR'})
-                raise
-            else:
-                self.progress._finish() # Change status to "done"
-        finally:
-            self._running = False
-            if lockfile.exists(): lockfile.unlink()
-            os.chdir(_old_dir)
+                # Remove ourselves from the call stack
+                if debug.EDIT_TRACEBACKS:
+                    typ, val, tb = sys.exc_info()
+                    raise typ, val, tb.tb_next
+                else:
+                    raise
+            return ins  # Task function will run with this input
+        except:
+            # We still need to clean up
+            self.__exit__(*sys.exc_info())
+            raise
+
+    def __exit__(self, typ, val, tb):
+        """Context manager counterpart to __enter__"""
+        if tb is not None:
+            self.progress.update({'status': 'ERROR'})
+        else:
+            self.progress._finish()  # Change status to "done"
+        self._running = False
+        if self._lockfile.exists(): self._lockfile.unlink()
+        os.chdir(self._old_dir)
 
     def __repr__(self):
         return 'TaskUnit: ' + self.func.__name__
@@ -309,8 +342,18 @@ class TaskUnit(object):
         directory. If this file already indicates a "working" status,
         raises a LockException.
         """
-        with self._run_context() as ins:
-            outdata = self.func(self, ins)
+        with tasker_traceback(self.__name__, self.tasker.p), \
+                self as ins:
+            try:
+                outdata = self.func(self, ins)
+            except:
+                # Hide run() in the call stack
+                if debug.EDIT_TRACEBACKS:
+                    typ, val, tb = sys.exc_info()
+                    raise typ, val, tb.tb_next
+                else:
+                    raise
+
             if len(self.outs):
                 if len(self.outs) == 1:
                     outdata = [outdata,]
@@ -365,8 +408,17 @@ class TaskUnitNoStore(TaskUnit):
         raises a LockException.
         """
         self.sync()
-        with self._run_context() as ins:
-            return self.func(self, ins)
+        try:
+            with tasker_traceback(self.__name__, self.tasker.p), \
+                    self as ins:
+                return self.func(self, ins)
+        except:
+            # Hide __call__() in the call stack
+            if debug.EDIT_TRACEBACKS:
+                typ, val, tb = sys.exc_info()
+                raise typ, val, tb.tb_next
+            else:
+                raise
 
     load = __call__
     force = __call__
@@ -436,7 +488,18 @@ class Tasker(DirBase):
             ins = dict(zip(args[1:], defaults))
             @functools.wraps(func)
             def task_func_with_kw(tsk, ins):
-                return func(tsk, **ins)
+                assert isinstance(tsk, TaskUnit)
+                assert isinstance(ins, dict)
+                try:
+                    return func(tsk, **ins)
+                except:
+                    # Hide this wrapper function in the call stack
+                    if debug.EDIT_TRACEBACKS:
+                        typ, val, tb = sys.exc_info()
+                        raise typ, val, tb.tb_next
+                    else:
+                        raise
+
             if outputs:
                 t = TaskUnit(task_func_with_kw, _nestmap(rectify_filepath, ins),
                              _nestmap(rectify_filepath, outputs), self)

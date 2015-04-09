@@ -310,14 +310,24 @@ class TestNewStyleTasks(TestTask):
         a_list()
 
     def test_traceback(self):
+        """Cursory check of traceback editing"""
+        @self.task.stores('dummy.txt')
+        def raises_stores(tsk):
+            raise RuntimeError()
         @self.task
         def raises(tsk):
             raise RuntimeError()
         @self.task
         def deps_on_raises(tsk, r=raises):
             pass
+
         try:
             deps_on_raises()
+        except RuntimeError:
+            pass
+
+        try:
+            raises_stores()
         except RuntimeError:
             pass
 
