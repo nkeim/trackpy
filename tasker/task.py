@@ -145,7 +145,7 @@ class TaskUnit(object):
 
         Tasks are resolved into their outputs. FileBase instances become their contents. 
         """
-        if isinstance(data_part, (str, path)): # Literal filename
+        if isinstance(data_part, (str, unicode, path)): # Literal filename
             return self._get_filename(data_part)
         elif isinstance(data_part, FileBase): # Formatted file
             return data_part.read()
