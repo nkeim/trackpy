@@ -298,6 +298,10 @@ class TaskUnit(object):
         output_mtime = self._output_mtime()
 
         # Run task if missing outputs, stale outputs, or an upstream task has been re-run.
+        # Note that missing *inputs* do not trigger a run, which would presumably fail.
+        # This is to prevent a scenario in which the user deletes an obscure input file,
+        # asks for a downstream value, thus inadvertently wipes the entire chain of stored values,
+        # and has no way to recompute anything.
         if force or output_mtime == -1 or \
                     (output_mtime is not None and output_mtime < max(input_mtimes)) or \
                     not result['all_current']:
@@ -313,10 +317,10 @@ class TaskUnit(object):
                 if output_mtime is not None and output_mtime < max(input_mtimes):
                     raise RuntimeError('Task "%s" failed to update its output files.'
                                        % self.__name__)
-        elif output_mtime is None and missing_files:
-            # Edge case: if this task does not store its outputs, and some input files
-            # are missing, then asking for its output would fail.
-            result['done'] = False
+        elif output_mtime is None and (  # This task does not store its outputs, and
+            missing_files  # It reads files that are missing, or
+            or not all(ur['done'] for ur in up_results)):  # It depends on tasks that are not computed
+                result['done'] = False
         else:
             result['done'] = True
 

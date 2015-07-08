@@ -309,16 +309,59 @@ class TestNewStyleTasks(TestTask):
             return [1, 2, 3]
         a_list()
 
+
     def test_missing_file(self):
-        """Check that missing dependencies make a task incomplete."""
+        """Check that missing dependencies make a non-storing task incomplete."""
         assert not self.task.four.is_current()  # Direct file dependency
 
         # Indirect file dependency
         missing_file = storage.JSON('dummy_missing')
         @self.task
         def missing_dependency(tsk, missing_file=missing_file):
-            return None
+            return missing_file
         assert not self.task.missing_dependency.is_current()  # Direct file dependency
+
+        @self.task
+        def child_of_missing_dependency(tsk, missing_dep=missing_dependency):
+            return missing_dep
+        assert not self.task.child_of_missing_dependency.is_current()
+
+
+    def test_missing_file_disaster(self):
+        """Check that deleting an upstream input file does not invalidate all downstream results."""
+        input_file = storage.JSON(self.task.p / 'input_file.json')
+        input_file.save(3)
+        assert input_file() == 3
+
+        @self.task.stores(storage.JSON('stage1.json'))
+        def stage1(tsk, input_value=input_file):
+            return input_value
+        @self.task.stores(storage.JSON('stage2.json'))
+        def stage2(tsk, stage1=stage1):
+            return stage1
+
+        assert not stage1.is_current()
+        assert stage2() == 3
+        stage2.sync()
+        assert stage1.is_current()
+        assert stage2.is_current()
+        assert stage2() == 3
+
+        input_file.filepath.remove()  # Oops!
+        assert stage1.is_current()
+        assert stage2.is_current()
+        assert stage2() == 3  # Still there
+
+        stage2.clear()
+        assert stage2() == 3  # Can recompute from stage1
+
+        try:
+            stage1.force()  # The one thing we can't do
+        except IOError:
+            pass
+        else:
+            raise AssertionError('Expected missing input file to cause IOError')
+        assert stage1.is_current()  # We didn't lose what results remain
 
 
     def test_traceback(self):
