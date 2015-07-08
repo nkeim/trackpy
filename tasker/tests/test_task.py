@@ -102,12 +102,12 @@ class TestTask(unittest.TestCase):
                             set([self.task.one, self.task.two,
                                  self.task.three, self.task.four]))
     def test_clearall(self):
-        self.task.four()
-        self.assertSetEqual(set(self.task.four.report()), set())
+        self.task.three()
+        self.assertSetEqual(set(self.task.three.report()), set())
         self.task.clear()
-        self.assertSetEqual(set(self.task.four.report()),
+        self.assertSetEqual(set(self.task.three.report()),
                             set([self.task.one, self.task.two,
-                                 self.task.three, self.task.four]))
+                                 self.task.three]))
     def test_twodirs(self):
         """Make sure separate task instances do not mix paths"""
         td2 = path(tempfile.mkdtemp())
@@ -308,6 +308,18 @@ class TestNewStyleTasks(TestTask):
         def a_list(tsk):
             return [1, 2, 3]
         a_list()
+
+    def test_missing_file(self):
+        """Check that missing dependencies make a task incomplete."""
+        assert not self.task.four.is_current()  # Direct file dependency
+
+        # Indirect file dependency
+        missing_file = storage.JSON('dummy_missing')
+        @self.task
+        def missing_dependency(tsk, missing_file=missing_file):
+            return None
+        assert not self.task.missing_dependency.is_current()  # Direct file dependency
+
 
     def test_traceback(self):
         """Cursory check of traceback editing"""
