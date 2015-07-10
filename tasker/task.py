@@ -293,7 +293,6 @@ class TaskUnit(object):
             try:
                 input_mtimes.append(inf.mtime)
             except OSError:
-                print inf
                 missing_files.append(inf)
         output_mtime = self._output_mtime()
 
