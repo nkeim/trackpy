@@ -15,6 +15,7 @@
 import exceptions, os, sys
 import inspect, contextlib, functools
 from collections import OrderedDict
+from warnings import warn
 import json
 
 from path import path
@@ -262,6 +263,11 @@ class TaskUnit(object):
 
         run : if true, run() tasks that are out of date.
         force : if true, run *this* task whether it is out of date or not.
+
+        Notes on returned dictionary keys:
+            all_current : not (Does/will this task need to be run()?)
+            done : Can the output be produced trivially?
+                (For tasks that don't store their output, are all deps up to date?)
         """
         if self._syncing:
             raise RuntimeError('Cyclic dependency: "%s" somehow depends on '
@@ -282,32 +288,46 @@ class TaskUnit(object):
             )
 
         input_mtimes = [-1] + [ur['mtime'] for ur in up_results]
+        missing_files = []
         for inf in self.input_files:
             try:
                 input_mtimes.append(inf.mtime)
             except OSError:
-                pass
+                missing_files.append(inf)
         output_mtime = self._output_mtime()
 
-        # Run task if missing outputs, stale outputs,
-        # or an upstream task has been re-run.
+        # Run task if missing outputs, stale outputs, or an upstream task has been re-run.
+        # Note that missing *inputs* do not trigger a run, which would presumably fail.
+        # This is to prevent a scenario in which the user deletes an obscure input file,
+        # asks for a downstream value, thus inadvertently wipes the entire chain of stored values,
+        # and has no way to recompute anything.
         if force or output_mtime == -1 or \
                     (output_mtime is not None and output_mtime < max(input_mtimes)) or \
                     not result['all_current']:
             result['all_current'] = False
             result['needed_tasks'].append(self)
+            result['done'] = False
             if run:
+                for missing_file in missing_files:
+                    warn('Attempting to run task "%s", but required file "%s" is '
+                         'missing. Failure is likely.' % (self.__name__, missing_file))
                 self.run()
                 output_mtime = self._output_mtime()
                 if output_mtime is not None and output_mtime < max(input_mtimes):
                     raise RuntimeError('Task "%s" failed to update its output files.'
                                        % self.__name__)
+        elif output_mtime is None and (  # This task does not store its outputs, and
+            missing_files  # It reads files that are missing, or
+            or not all(ur['done'] for ur in up_results)):  # It depends on tasks that are not computed
+                result['done'] = False
+        else:
+            result['done'] = True
 
         if output_mtime is None:
             result['mtime'] = max(input_mtimes)  # No outputs
         else:
             result['mtime'] = output_mtime
-        return result  # needed_tasks, all_current, mtime
+        return result  # needed_tasks, visited_tasks, missing_files, all_current, mtime
 
     # Public interface
     def __call__(self):
@@ -373,8 +393,16 @@ class TaskUnit(object):
         self._walk_up(run=True)
 
     def is_current(self):
-        """True if this task and all its dependencies are current."""
-        return self._walk_up()['all_current']
+        """True if this task's output is readily available.
+
+        If the task does store its output, this implies that the output
+        has been computed and stored, and that no dependency is newer.
+        (Missing upstream files do *not* make this False.)
+
+        If the task does not store its output, this implies that all
+        its dependencies are available and current.
+        """
+        return self._walk_up()['done']
 
     def report(self):
         """List tasks that would have to be run to update outputs."""
