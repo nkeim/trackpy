@@ -500,10 +500,11 @@ def locate(raw_image, diameter, minmass=100., maxsize=None, separation=None,
             columns += ['size_' + cc for cc in coord_columns]
         SIGNAL_COLUMN_INDEX = len(columns) + 1
         columns += ['ecc', 'signal', 'raw_mass']
-        if isotropic and np.all(noise_size[1:] == noise_size[:-1]):
-            columns += ['ep']
-        else:
-            columns += ['ep_' + cc for cc in coord_columns]
+        if compute_uncertainty:
+            if isotropic and np.all(noise_size[1:] == noise_size[:-1]):
+                columns += ['ep']
+            else:
+                columns += ['ep_' + cc for cc in coord_columns]
 
     # Find local maxima.
     # Define zone of exclusion at edges of image, avoiding
