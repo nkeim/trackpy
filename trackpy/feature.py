@@ -223,14 +223,14 @@ def refine(raw_image, image, radius, coords, separation=0, max_iterations=10,
             to_drop = []
             for pair in duplicates:
                 # Drop the dimmer one.
-                pairmass = mass.take(pair, 0)
-                if np.equal(*pairmass):
+                m0, m1 = mass[pair[0]], mass[pair[1]]
+                if m0 == m1:
                     # Rare corner case: a tie!
                     # Break ties by sorting by sum of coordinates, to avoid
                     # any randomness resulting from cKDTree returning a set.
-                    dimmer = np.argsort(np.sum(positions.take(pair, 0), 1))[0]
+                    dimmer = np.argmin(np.sum(positions.take(pair, 0), 1))
                 else:
-                    dimmer = np.argmin(pairmass)
+                    dimmer = 0 if m0 < m1 else 1
                 to_drop.append(pair[dimmer])
             results = np.delete(results, to_drop, 0)
 
