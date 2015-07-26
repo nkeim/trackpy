@@ -346,7 +346,7 @@ def locate(raw_image, diameter, minmass=100., maxsize=None, separation=None,
            noise_size=1, smoothing_size=None, threshold=None, invert=False,
            percentile=64, topn=None, preprocess=True, max_iterations=10,
            filter_before=True, filter_after=True,
-           characterize=True, engine='auto'):
+           characterize=True, compute_uncertainty=True, engine='auto'):
     """Locate Gaussian-like blobs of some approximate size in an image.
 
     Preprocess the image by performing a band pass and a threshold.
@@ -403,6 +403,9 @@ def locate(raw_image, diameter, minmass=100., maxsize=None, separation=None,
         features. True by default.
     characterize : boolean
         Compute "extras": eccentricity, signal, ep. True by default.
+    compute_uncertainty : boolean
+        If 'characterize' is on, compute uncertainty in position ("ep").
+        True by default.
     engine : {'auto', 'python', 'numba'}
 
     See Also
@@ -570,12 +573,12 @@ def locate(raw_image, diameter, minmass=100., maxsize=None, separation=None,
 
     # Estimate the uncertainty in position using signal (measured in refine)
     # and noise (measured here below).
-    if characterize:
+    if characterize and compute_uncertainty:
         if preprocess:  # reuse processed image to increase performance
             black_level, noise = measure_noise(raw_image, diameter,
                                                threshold, image)
         else:
-            black_level, noise = measure_noise(raw_image, diameter, threshold)
+            black_level, noise = measure_noise(raw_image, diameter, threshold, image)
         Npx = N_binary_mask(radius, ndim)
         mass = refined_coords[:, SIGNAL_COLUMN_INDEX + 1] - Npx * black_level
         ep = _static_error(mass, noise, radius[::-1], noise_size[::-1])
@@ -594,7 +597,7 @@ def batch(frames, diameter, minmass=100, maxsize=None, separation=None,
           noise_size=1, smoothing_size=None, threshold=None, invert=False,
           percentile=64, topn=None, preprocess=True, max_iterations=10,
           filter_before=True, filter_after=True,
-          characterize=True, engine='auto',
+          characterize=True, compute_uncertainty=True, engine='auto',
           output=None, meta=True):
     """Locate Gaussian-like blobs of some approximate size in a set of images.
 
@@ -652,6 +655,9 @@ def batch(frames, diameter, minmass=100, maxsize=None, separation=None,
         features. True by default.
     characterize : boolean
         Compute "extras": eccentricity, signal, ep. True by default.
+    compute_uncertainty : boolean
+        If 'characterize' is on, compute uncertainty in position ("ep").
+        True by default.
     engine : {'auto', 'python', 'numba'}
     output : {None, trackpy.PandasHDFStore, SomeCustomClass}
         If None, return all results as one big DataFrame. Otherwise, pass
@@ -706,7 +712,7 @@ def batch(frames, diameter, minmass=100, maxsize=None, separation=None,
                           noise_size, smoothing_size, threshold, invert,
                           percentile, topn, preprocess, max_iterations,
                           filter_before, filter_after, characterize,
-                          engine)
+                          compute_uncertainty, engine)
         if hasattr(image, 'frame_no') and image.frame_no is not None:
             frame_no = image.frame_no
             # If this works, locate created a 'frame' column.
