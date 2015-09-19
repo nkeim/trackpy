@@ -608,7 +608,7 @@ def link_df(features, search_range, memory=0,
         features.index = orig_index
         # And don't bother to sort -- user must be doing something special.
     else:
-        features.sort(['particle', t_column], inplace=True)
+        features.sort_values(['particle', t_column], inplace=True)
         features.reset_index(drop=True, inplace=True)
     return features
 
@@ -748,7 +748,7 @@ def link_df_iter(features, search_range, memory=0,
             features.index = old_index
             # TODO: don't run index.copy() even when retain_index is false
         else:
-            features.sort('particle', inplace=True)
+            features.sort_values('particle', inplace=True)
             features.reset_index(drop=True, inplace=True)
 
         logger.info("Frame %d: %d trajectories present", frame_no, len(labels))

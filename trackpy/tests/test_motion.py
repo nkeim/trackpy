@@ -23,8 +23,8 @@ def random_walk(N):
 
 def conformity(df):
     "Organize toy data to look like real data."
-    return df.set_index('frame', drop=False).sort(['frame', 'particle']). \
-        astype('float64')
+    return df.set_index('frame', drop=False).sort_values(
+        ['frame', 'particle']).astype('float64')
 
 class TestDrift(unittest.TestCase):
 
