@@ -49,6 +49,7 @@ class TestPairCorrelation(unittest.TestCase):
         x = np.arange(1,10,1)
         r = peaks.max() * 1/x
 
+
         self.assertTrue( np.allclose(peaks, r, atol=.01) )
 
 
@@ -63,6 +64,8 @@ class TestPairCorrelation(unittest.TestCase):
         assert len(peaks) == 9
         x = np.arange(1,10,1)
         r = peaks.max() * 1/x**2
+
+
         self.assertTrue( np.allclose(peaks, r, atol=.02) )
 
 
@@ -88,6 +91,18 @@ class TestPairCorrelation(unittest.TestCase):
 
         # Turning off edge handling should give incorrect result
         self.assertFalse(np.allclose(g_r_all, g_r_no_edge, atol=.04))
+
+
+    def test_speed(self):
+        import time
+        x,y,z = np.random.random(size=(3,10000))*1000
+        df = pandas.DataFrame({'x':x, 'y':y, 'z':z})
+
+        t = time.time()
+        pairCorrelation3D(df,dr=.1,cutoff=30)
+        print "Run time for speed_test: " + str(time.time() - t)
+
+
 
     def _lattice2D(self, n = 20):
         #Generates 2D lattice, spacing = 1

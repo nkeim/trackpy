@@ -59,42 +59,17 @@ def pairCorrelation2D(feat, cutoff, fraction = 1., dr = .5, p_indices = None, nd
     ckdtree = cKDTree(feat[['x', 'y']])  # initialize kdtree for fast neighbor search
     points = feat.as_matrix(['x', 'y'])  # Convert pandas dataframe to numpy array for faster indexing
         
-    # For edge handling, two techniques are used. If a particle is near only one edge, the fractional area of the
-    # search ring r+dr is caluclated analytically via 1 - arccos(d / r ) / pi, where d is the distance to the wall. If
-    # the particle is near two or more walls, a ring of points is generated around the particle, and a mask is
-    # applied to find the the number of points within the boundary, giving an estimate of the area. Below,
-    # rings of size r + dr  for all r in r_edges are generated and cached for later use to speed up computation
-    n = 1000  # TODO: Should scale with radius, dr
-    refx, refy = _points_ring2D(r_edges, dr, n)
 
     for idx in p_indices:
         dist, idxs = ckdtree.query(points[idx], k=max_p_count, distance_upper_bound=cutoff)
         dist = dist[dist > 0] # We don't want to count the same particle
 
         area = np.pi * (np.arange(dr, cutoff + 2*dr, dr)**2 - np.arange(0, cutoff + dr, dr)**2)
-        
+
         if handle_edge:
-            # Find the number of edge collisions at each radii
-            collisions = _num_wall_collisions2D(points[idx], r_edges, xmin, xmax, ymin, ymax)
-
-            # If some disk will collide with the wall, we need to implement edge handling
-            if collisions.max() > 0:
-
-                # Use analyitcal solution to find area of disks cut off by one wall.
-                # grab the distance to the closest wall
-                d = _distances_to_wall2D(points[idx], xmin, xmax, ymin, ymax).min()
-
-                inx = np.where(collisions == 1)[0]
-                area[inx] *= 1 - np.arccos(d / (r_edges[inx] + dr/2)) / np.pi 
-            
-                # If disk is cutoff by 2 or more walls, generate a bunch of points and use a mask to estimate the area
-                # within the boundaries
-                inx = np.where(collisions >= 2)[0]
-                x = refx[inx] + points[idx,0]
-                y = refy[inx] + points[idx,1]
-                mask = (x >= xmin) & (x <= xmax) & (y >= ymin) & (y <= ymax)
-                area[inx] *= mask.sum(axis=1, dtype='float') / len(refx[0])
-            
+            area *= arclen_2d_bounded(r_edges+dr, np.tile(points[idx], (len(r_edges), 1)), 
+                                     ((xmin, xmax), (ymin, ymax))) / (2*np.pi*(r_edges + dr))
+        
         g_r +=  np.histogram(dist, bins = r_edges)[0] / area[:-1]
 
     g_r /= (ndensity * len(p_indices))
@@ -175,6 +150,15 @@ def pairCorrelation3D(feat, cutoff, fraction = 1., dr = .5, p_indices = None, nd
         area = (4./3.) * np.pi * (np.arange(dr, cutoff + 2*dr, dr)**3 - np.arange(0, cutoff + dr, dr)**3)
         
         if handle_edge:
+            """
+            collision_mask = _num_wall_collisions3D(points[idx], r_edges, xmin, xmax, ymin, ymax, zmin, zmax) > 0
+
+            if np.any(collision_mask):
+                area[collision_mask] *= area_3d_bounded(r_edges[collision_mask]+dr, np.tile(points[idx], (len(r_edges[collision_mask]), 1)), 
+                                        ((xmin, xmax), (ymin, ymax), (zmin, zmax))) / (4.*np.pi*(r_edges[collision_mask] + dr)**2)
+            """
+
+            
             # Find the number of edge collisions at each radii
             collisions = _num_wall_collisions3D(points[idx], r_edges, xmin, xmax, ymin, ymax, zmin, zmax)
 
@@ -197,40 +181,13 @@ def pairCorrelation3D(feat, cutoff, fraction = 1., dr = .5, p_indices = None, nd
                 z = refz[inx] + points[idx,2]
                 mask = (x >= xmin) & (x <= xmax) & (y >= ymin) & (y <= ymax) & (z >= zmin) & (z <= zmax)
                 area[inx] *= mask.sum(axis=1, dtype='float') / len(refx[0])
+        
 
         g_r +=  np.histogram(dist, bins = r_edges)[0] / area[:-1]
 
     g_r /= (ndensity * len(p_indices))
     return r_edges, g_r
 
-def _num_wall_collisions2D(point, radius, xmin, xmax, ymin, ymax):
-    """Returns the number of walls a shell of a certain radius and position collides with.
-       Wall boundaries specified by min, max parameters"""
-    collisions = (point[0] + radius >= xmax).astype(int) + (point[0] - radius <= xmin).astype(int) + \
-                 (point[1] + radius >= ymax).astype(int) + (point[1] - radius <= ymin).astype(int)
-
-    return collisions
-    
-def _distances_to_wall2D(point, xmin, xmax, ymin, ymax): 
-    """Returns the distance of a paritlce a position 'point' to the nearest wall"""
-    return np.array([point[0]-xmin, xmax-point[0], point[1]-ymin, ymax-point[1]])
-
-def _points_ring2D(r_edges, dr, n):
-    """Returns x, y array of points comprising shells extending from r to r_dr.
-       n determines the number of points in each ring. Rings are generated by constructing 
-       a unit disk and projecting every point onto a ring of thickness dr"""
-
-    refx_all, refy_all = [],[]
-    for r in r_edges:
-        ref = 2*np.random.random(size=(n, 2)) - 1
-        ref /= np.linalg.norm(ref, axis=1).repeat(2).reshape((len(ref), 2))
-        ref *= dr*np.random.random(size=(len(ref), 2))+ r
-        x,y = ref[:,0], ref[:,1]
-
-        refx_all.append(x)
-        refy_all.append(y)
-
-    return np.array(refx_all), np.array(refy_all)
 
 
 def _num_wall_collisions3D(point, radius, xmin, xmax, ymin, ymax, zmin, zmax):
@@ -262,3 +219,144 @@ def _points_ring3D(r_edges, dr, n):
         refz_all.append(z)
 
     return np.array(refx_all), np.array(refy_all), np.array(refz_all)
+
+
+def arclen_2d_bounded(R, pos, box):
+    arclen = 2*np.pi*R
+
+    h = np.array([pos[:,0] - box[0][0], box[0][1] - pos[:,0],
+                  pos[:,1] - box[1][0], box[1][1] - pos[:,1]])
+
+    for h0 in h:
+        mask = h0 < R
+        if mask.size == 1 and not mask.ravel()[0]:
+            continue
+        elif mask.size == 1:
+            mask = 0
+        arclen[mask] -= circle_cap_arclen(h0[mask], R[mask])
+
+    for h1, h2 in [[0, 2], [0, 3], [1, 2], [1, 3]]:  # adjacent sides
+        mask = h[h1]**2 + h[h2]**2 < R**2
+        if mask.size == 1 and not mask.ravel()[0]:
+            continue
+        elif mask.size == 1:
+            mask = 0
+        arclen[mask] += circle_corner_arclen(h[h1, mask], h[h2, mask],
+                                             R[mask])
+
+    arclen[arclen < 10**-5 * R] = np.nan
+    return arclen
+
+def circle_corner_arclen(h1, h2, R):
+    """ Length of a circle arc of circle with radius R that is bounded by
+    two perpendicular straight lines `h1` and `h2` from the origin.
+    h1**2 + h2**2 < R**2
+    h1 >= R
+    h2 >= R
+    """
+    return R*(np.arccos(h2 / R) - np.arcsin(h1 / R))
+
+def circle_cap_arclen(h, R):
+    """ Length of a circle arc of circle with radius R that is bounded by
+    a straight line `h` from the origin. h >= 0, h < R"""
+    return 2*R*np.arccos(h / R)
+
+def area_3d_bounded(dist, pos, box, min_z=None, min_x=None):
+    """ Calculated using the surface area of a sphere equidistant
+    to a certain point.
+    When the sphere is truncated by the box boundaries, this distance
+    is subtracted using the formula for the sphere cap surface. We
+    calculate this by defining h = the distance from point to box edge.
+    When for instance sphere is bounded by the top and right boundaries,
+    the area in the edge may be counted double. This is the case when
+    h1**2 + h2**2 < R**2. This double counted area is calculated
+    and added if necessary.
+    When the sphere is bounded by three adjacant boundaries,
+    the area in the corner may be subtracted double. This is the case when
+    h1**2 + h2**2 + h3**2 < R**2. This double counted area is calculated
+    and added if necessary.
+    The result is the sum of the weights of pos0 and pos1."""
+
+    area = 4*np.pi*dist**2
+
+    h = np.array([pos[:, 0] - box[0][0], box[0][1] - pos[:, 0],
+                  pos[:, 1] - box[1][0], box[1][1] - pos[:, 1],
+                  pos[:, 2] - box[2][0], box[2][1] - pos[:, 2]])
+
+    if min_x is not None and min_z is not None:
+        close_z = dist < min_z
+        lower_cutoff = np.sqrt(dist[close_z]**2 - min_x**2)
+        h_masked = h[:, close_z]
+        h[:2, close_z] = np.vstack((np.minimum(lower_cutoff, h_masked[0]),
+                                    np.minimum(lower_cutoff, h_masked[1])))
+
+    for h0 in h:
+        mask = h0 < dist
+        if mask.size == 1 and not mask.ravel()[0]:
+            continue
+        elif mask.size == 1:
+            mask = 0
+        area[mask] -= sphere_cap_area(h0[mask], dist[mask])
+
+    for h1, h2 in [[0, 2], [0, 3], [0, 4], [0, 5],
+                   [1, 2], [1, 3], [1, 4], [1, 5],
+                   [2, 4], [2, 5], [3, 4], [3, 5]]:  #2 adjacent sides
+        mask = h[h1]**2 + h[h2]**2 < dist**2
+        if mask.size == 1 and not mask.ravel()[0]:
+            continue
+        elif mask.size == 1:
+            mask = 0
+        area[mask] += sphere_edge_area(h[h1, mask], h[h2, mask],
+                                       dist[mask])
+
+    for h1, h2, h3 in [[0, 2, 4], [0, 2, 5], [0, 3, 4], [0, 3, 5],
+                       [1, 2, 4], [1, 2, 5], [1, 3, 4], [1, 3, 5]]:  #3 adjacent sides
+        mask = h[h1]**2 + h[h2]**2 + h[h3]**2 < dist**2
+        if mask.size == 1 and not mask.ravel()[0]:
+            continue
+        elif mask.size == 1:
+            mask = 0
+        area[mask] -= sphere_corner_area(h[h1, mask], h[h2, mask],
+                                         h[h3, mask], dist[mask])
+
+    area[area < 10**-7 * dist**2] = np.nan
+
+    return area
+
+
+def sphere_cap_area(h, R):
+    """ Area of a sphere cap of sphere with radius R that is bounded by
+    a flat plane `h` from the origin. h >= 0, h < R"""
+    return 2*np.pi*R*(R-h)
+
+
+def sphere_edge_area(x, y, R):
+    """ Area of a sphere 'edge' of sphere with radius R that is bounded by
+    two perpendicular flat planes `h0`, `h1` from the origin. h >= 0, h < R"""
+    p = np.sqrt(R**2 - x**2 - y**2)
+    A = (R - x - y)*np.pi - 2*R*np.arctan(x*y/(p*R)) + \
+        2*x*np.arctan(y/p) + 2*y*np.arctan(x/p)
+    return A*R
+
+
+def sphere_corner_area(x, y, z, R):
+    """ Area of a sphere 'corner' of sphere with radius R that is bounded by
+    three perpendicular flat planes `h0`, `h1`, `h2` from the origin. """
+    pxy = np.sqrt(R**2 - x**2 - y**2)
+    pyz = np.sqrt(R**2 - y**2 - z**2)
+    pxz = np.sqrt(R**2 - x**2 - z**2)
+    A = np.pi*(R - x - y - z)/2 + \
+        x*(np.arctan(y/pxy) + np.arctan(z/pxz)) - R*np.arctan(y*z/(R*pyz)) + \
+        y*(np.arctan(x/pxy) + np.arctan(z/pyz)) - R*np.arctan(x*z/(R*pxz)) + \
+        z*(np.arctan(x/pxz) + np.arctan(y/pyz)) - R*np.arctan(x*y/(R*pxy))
+    return A*R
+
+
+
+"""
+R = np.array([5])
+pos = np.array([[10, 10]])
+box =  np.array([[0,10],[0,10]])
+
+print arclen_2d_bounded(R, pos, box) / (2 * np.pi * R)
+"""
