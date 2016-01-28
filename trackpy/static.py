@@ -143,22 +143,30 @@ def pairCorrelation3D(feat, cutoff, fraction = 1., dr = .5, p_indices = None, nd
     n = 1000  # TODO: Should scale with radius, dr
     refx, refy, refz = _points_ring3D(r_edges, dr, n)
 
+
+    area_frac = np.ones((len(r_edges), len(points)))
+    for i, d in enumerate(r_edges):
+        d = np.ones(len(points))*d
+        area_frac[i] = area_3d_bounded(d, points,  ((xmin, xmax), (ymin, ymax), (zmin, zmax))) / (4*np.pi*d**2)
+
+
+    area = (4./3.) * np.pi * (np.arange(dr, cutoff + 2*dr, dr)**3 - np.arange(0, cutoff + dr, dr)**3)
     for idx in p_indices:
         dist, idxs = ckdtree.query(points[idx], k=max_p_count, distance_upper_bound=cutoff)
         dist = dist[dist > 0] # We don't want to count the same particle
-    
-        area = (4./3.) * np.pi * (np.arange(dr, cutoff + 2*dr, dr)**3 - np.arange(0, cutoff + dr, dr)**3)
-        
+
+        """
         if handle_edge:
-            """
+
+
             collision_mask = _num_wall_collisions3D(points[idx], r_edges, xmin, xmax, ymin, ymax, zmin, zmax) > 0
 
             if np.any(collision_mask):
                 area[collision_mask] *= area_3d_bounded(r_edges[collision_mask]+dr, np.tile(points[idx], (len(r_edges[collision_mask]), 1)), 
                                         ((xmin, xmax), (ymin, ymax), (zmin, zmax))) / (4.*np.pi*(r_edges[collision_mask] + dr)**2)
-            """
 
-            
+
+
             # Find the number of edge collisions at each radii
             collisions = _num_wall_collisions3D(points[idx], r_edges, xmin, xmax, ymin, ymax, zmin, zmax)
 
@@ -181,9 +189,9 @@ def pairCorrelation3D(feat, cutoff, fraction = 1., dr = .5, p_indices = None, nd
                 z = refz[inx] + points[idx,2]
                 mask = (x >= xmin) & (x <= xmax) & (y >= ymin) & (y <= ymax) & (z >= zmin) & (z <= zmax)
                 area[inx] *= mask.sum(axis=1, dtype='float') / len(refx[0])
-        
+        """
 
-        g_r +=  np.histogram(dist, bins = r_edges)[0] / area[:-1]
+        g_r +=  np.histogram(dist, bins = r_edges)[0] / (area[:-1] * area_frac[:, idx])
 
     g_r /= (ndensity * len(p_indices))
     return r_edges, g_r
@@ -276,7 +284,7 @@ def area_3d_bounded(dist, pos, box, min_z=None, min_x=None):
     h1**2 + h2**2 + h3**2 < R**2. This double counted area is calculated
     and added if necessary.
     The result is the sum of the weights of pos0 and pos1."""
-
+    # TODO: Write test case for this function: sphere centered on box corner
     area = 4*np.pi*dist**2
 
     h = np.array([pos[:, 0] - box[0][0], box[0][1] - pos[:, 0],
@@ -319,7 +327,7 @@ def area_3d_bounded(dist, pos, box, min_z=None, min_x=None):
         area[mask] -= sphere_corner_area(h[h1, mask], h[h2, mask],
                                          h[h3, mask], dist[mask])
 
-    area[area < 10**-7 * dist**2] = np.nan
+    area[area < (10**-7 * dist**2)] = np.nan
 
     return area
 

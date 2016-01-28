@@ -158,5 +158,7 @@ class TestPairCorrelation(unittest.TestCase):
         return df
 
 if __name__ == '__main__':
+    import sys
+    sys.argv.append('TestPairCorrelation.test_speed')
     unittest.main()
    
