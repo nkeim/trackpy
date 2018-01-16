@@ -15,17 +15,17 @@
 import os
 import cPickle
 import json
-from path import path
+from path import Path
 
 __all__ = ['Pandas', 'JSON', 'Pickle']
 
 class FileBase(object):
     def __init__(self, filename, parentdir='.'):
         """Specify location of file. If 'filename' is absolute, 'parentdir' is ignored."""
-        self.filename = path(filename).normpath()
+        self.filename = Path(filename).normpath()
         self.set_parentdir(parentdir)
     def set_parentdir(self, parentdir):
-        self.parentdir = path(parentdir)
+        self.parentdir = Path(parentdir)
         if self.filename.isabs():
             self.filepath = self.filename
         else:

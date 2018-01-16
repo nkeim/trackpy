@@ -14,7 +14,7 @@
 
 # FIXME: No test coverage
 
-from path import path
+from path import Path
 
 from .base import cachedprop
 from .task import Tasker
@@ -37,7 +37,7 @@ class SetTasker(Tasker):
 
     def group_paths(self, groupname):
         """Get absolute paths of a named group of subdirectories"""
-        return [path(t).abspath() for t in self.groups[groupname]]
+        return [Path(t).abspath() for t in self.groups[groupname]]
 
     def grp(self, groupname, **kw):
         """use() each directory in a named group"""
@@ -50,7 +50,7 @@ class SetTasker(Tasker):
 
     def alias_path(self, aliasname):
         """Get absolute path of an aliased subdirectory"""
-        return [path(t).abspath() for t in self.aliases[aliasname]]
+        return [Path(t).abspath() for t in self.aliases[aliasname]]
 
     def al(self, aliasname, **kw):
         """use() an aliased subdirectory"""

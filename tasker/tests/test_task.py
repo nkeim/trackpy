@@ -1,10 +1,10 @@
 import os
 import tempfile, unittest
-from path import path
+from path import Path
 import pandas
 from tasker import task, storage, progress
 
-basedir = path.getcwd()
+basedir = Path.getcwd()
 
 def test_uniq():
     testdat = [0, 1, 1, 3, 7, 7, 7, 10, 10]
@@ -54,7 +54,7 @@ class TestTask(unittest.TestCase):
         return task
     def setUp(self):
         os.chdir(basedir)
-        self.testdir = path(tempfile.mkdtemp())
+        self.testdir = Path(tempfile.mkdtemp())
         self.task = self.enter_dir(self.testdir)
     def tearDown(self):
         os.chdir(basedir)
@@ -110,7 +110,7 @@ class TestTask(unittest.TestCase):
                                  self.task.three]))
     def test_twodirs(self):
         """Make sure separate task instances do not mix paths"""
-        td2 = path(tempfile.mkdtemp())
+        td2 = Path(tempfile.mkdtemp())
         try:
             task2 = self.enter_dir(td2)
             self.assertNotEqual(self.task.two()[1]['name'], task2.two()[1]['name'])
@@ -121,9 +121,9 @@ class TestTask(unittest.TestCase):
 
     def test_context(self):
         """Text chdir context behavior"""
-        assert path('.').abspath().basename() != self.testdir.abspath().basename()
+        assert Path('.').abspath().basename() != self.testdir.abspath().basename()
         with self.task:
-            assert path('.').abspath().basename() == self.testdir.abspath().basename()
+            assert Path('.').abspath().basename() == self.testdir.abspath().basename()
 
     def test_progress(self):
         @self.task.create_task([], ['progress.tag'])

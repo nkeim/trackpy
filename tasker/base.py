@@ -13,7 +13,7 @@
 #   limitations under the License.
 
 import os
-from path import path
+from path import Path
 
 class AttrDict(dict):
     """Dictionary that also exposes items as attributes."""
@@ -58,7 +58,7 @@ class DirBase(object):
     Can also be used as a chdir() context manager.
     """
     def __init__(self, loc='.'):
-        self.p = path(loc).abspath()
+        self.p = Path(loc).abspath()
         self._chdir_stack = []
 
     name = property(lambda self: str(self.p.basename()),

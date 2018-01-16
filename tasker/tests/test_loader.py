@@ -1,16 +1,16 @@
 import os
 import tempfile, unittest
-from path import path
+from path import Path
 from tasker import loader
 
-basedir = path.getcwd()
-mypath = path(__file__)
+basedir = Path.getcwd()
+mypath = Path(__file__)
 sample_taskfile = mypath.dirname() / 'sample_taskfile.py'
 
 class loadertests(unittest.TestCase):
     def setUp(self):
         os.chdir(basedir)
-        self.testdir = path(tempfile.mkdtemp())
+        self.testdir = Path(tempfile.mkdtemp())
         self.taskfile = self.testdir / 'taskfile_sub.py'
         sample_taskfile.copy(self.taskfile)
         self.temptaskdir = self.testdir / 'top' / 'middle' / 'bottom'

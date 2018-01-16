@@ -1,5 +1,5 @@
 import os
-from path import path
+from path import Path
 
 import tempfile, shutil
 import unittest
@@ -56,7 +56,7 @@ class parentdir(unittest.TestCase):
     def test_parentdir(self):
         """Check whether the file reference can be made absolute after construction."""
         data = dict(one=1, two=2.0, three=[4, 5])
-        testdir = path(tempfile.mkdtemp(dir='.'))
+        testdir = Path(tempfile.mkdtemp(dir='.'))
         try:
             pobj = JSON('test.json')
             pobj.set_parentdir(testdir)

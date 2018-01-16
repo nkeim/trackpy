@@ -18,7 +18,7 @@ from collections import OrderedDict
 from warnings import warn
 import json
 
-from path import path
+from path import Path
 
 from .base import DirBase, AttrDict
 from .storage import FileBase
@@ -133,9 +133,9 @@ class TaskUnit(object):
     def _get_filename(self, fileobj):
         """Returns absolute path to a file, from a string or FileBase."""
         if isinstance(fileobj, FileBase): 
-            fn = path(fileobj.filename)
+            fn = Path(fileobj.filename)
         else:
-            fn = path(fileobj)
+            fn = Path(fileobj)
         if fn.isabs():
             return fn
         else:
@@ -146,7 +146,7 @@ class TaskUnit(object):
 
         Tasks are resolved into their outputs. FileBase instances become their contents. 
         """
-        if isinstance(data_part, (str, unicode, path)): # Literal filename
+        if isinstance(data_part, (str, unicode, Path)): # Literal filename
             return self._get_filename(data_part)
         elif isinstance(data_part, FileBase): # Formatted file
             return data_part.read()
@@ -549,7 +549,7 @@ class Tasker(DirBase):
         """Return the TaskUnit instance that is responsible for 'filename'.
 
         'filename' can be relative to this instance's working dir, or absolute."""
-        fnp = path.filename
+        fnp = Path.filename
         if fnp.isabs: fnp_abs = fnp
         else: fnp_abs = (self.p / fnp).abspath()
         for t in self.tasks:
