@@ -125,7 +125,11 @@ html_theme = 'pydata_sphinx_theme'
 html_theme_options = {
                       "header_links_before_dropdown": 2,
                       "navbar_align": "right",
-                      "secondary_sidebar_items": ["page-toc"],
+                      "secondary_sidebar_items": {
+                        "*": ["page-toc"],
+                        "generated/trackpy.*": [],
+
+                      }
                      }
 
 # The name for this set of Sphinx documents.  If None, it defaults to
@@ -137,7 +141,8 @@ html_short_title = "trackpy " + release
 
 # Only show left sidebar in API reference
 html_sidebars = {
-    "[!generated]**": [],
+    "*": [],
+    "tutorial/*": [],
     "api": ["sidebar-nav-bs"],
     "generated/trackpy.*": ["sidebar-nav-bs"],
 }
