@@ -10,3 +10,9 @@ significantly different (and more accurate) when gaps are numerous and large.
 Bug fixes
 ~~~~~~~~~
 - MSD properly handles gaps in trajectories (@vivarose, #773)
+- Fix plot_traj(colorby='frame') for intermittent particles. (@T0T0R, #777)
+- Let imsd() use output of subtract_drift() (@nkeim, #785)
+
+Enhancements
+~~~~~~~~~~~~
+- Clarify what parameters are kwonly in documented signature of link_foo() (@anntzer, #789)
